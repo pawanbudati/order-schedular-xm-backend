@@ -82,20 +82,38 @@ class XM360Client {
     return 'http://127.0.0.1:8555';
   }
 
-  public async connectLocalBridge(): Promise<boolean> {
+  public async connectLocalBridge(): Promise<{ success: boolean; message: string; details?: any }> {
     const config = db.getConfig();
     const localBaseUrl = this.getLocalBridgeBaseUrl();
-    if (!config.accountId || !config.password) return false;
+    if (!config.accountId || !config.password) {
+      return { success: false, message: 'Missing XM Account ID or Password. Please fill and save credentials first.' };
+    }
 
     try {
       const res = await axios.post(`${localBaseUrl}/connect`, {
         account: config.accountId,
         password: config.password,
         server: config.serverName || 'XMGlobal-Real 30',
-      }, { timeout: 4000 });
-      return Boolean(res.data?.success);
-    } catch {
-      return false;
+      }, { timeout: 6000 });
+
+      if (res.data && res.data.success) {
+        return {
+          success: true,
+          message: res.data.message || `Successfully connected to MT5 Account ${res.data.account_id || config.accountId}!`,
+          details: res.data,
+        };
+      } else {
+        return {
+          success: false,
+          message: res.data?.error || 'MT5 Bridge authentication failed.',
+          details: res.data,
+        };
+      }
+    } catch (err: any) {
+      return {
+        success: false,
+        message: `Local MT5 Bridge unreachable at ${localBaseUrl}. Ensure mt5_bridge.py is running on port 8555. Error: ${err.message}`,
+      };
     }
   }
 

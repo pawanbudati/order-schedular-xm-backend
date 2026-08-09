@@ -69,9 +69,22 @@ router.post('/config', (req, res) => {
       serverName: updated.serverName,
       platform: updated.platform,
       recvWindow: updated.recvWindow,
-      hasPassword: Boolean(updated.password),
     },
   });
+});
+
+// Explicit Manual Connection Trigger for MT5 Local Bridge
+router.post('/config/connect-mt5', async (req, res) => {
+  try {
+    const result = await xm360Client.connectLocalBridge();
+    if (result.success) {
+      res.json(result);
+    } else {
+      res.status(400).json(result);
+    }
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message || 'Error connecting to local MT5 Bridge' });
+  }
 });
 
 // Get Account Balance & Purchasing Power

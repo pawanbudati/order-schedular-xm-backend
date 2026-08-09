@@ -82,17 +82,42 @@ class XM360Client {
     return 'http://127.0.0.1:8555';
   }
 
+  public async connectLocalBridge(): Promise<boolean> {
+    const config = db.getConfig();
+    const localBaseUrl = this.getLocalBridgeBaseUrl();
+    if (!config.accountId || !config.password) return false;
+
+    try {
+      const res = await axios.post(`${localBaseUrl}/connect`, {
+        account: config.accountId,
+        password: config.password,
+        server: config.serverName || 'XMGlobal-Real 30',
+      }, { timeout: 4000 });
+      return Boolean(res.data?.success);
+    } catch {
+      return false;
+    }
+  }
+
   /**
    * Get XM Account Balance, Equity, & Free Margin
    */
   public async getAccountBalance(): Promise<XM360AccountBalance> {
     const apiToken = this.getApiToken();
     const accountId = this.getAccountId();
+    const config = db.getConfig();
     const localBaseUrl = this.getLocalBridgeBaseUrl();
 
     // 1. Try Local MT5 Bridge first if running
     try {
-      const localRes = await axios.get(`${localBaseUrl}/account`, { timeout: 2500 });
+      const localRes = await axios.get(`${localBaseUrl}/account`, {
+        params: {
+          account: accountId,
+          password: config.password,
+          server: config.serverName,
+        },
+        timeout: 2500
+      });
       if (localRes.data && (localRes.data.balance !== undefined || localRes.data.equity !== undefined)) {
         const b = parseFloat(localRes.data.balance || '0');
         const e = parseFloat(localRes.data.equity || localRes.data.balance || '0');
@@ -223,6 +248,7 @@ class XM360Client {
     const localBaseUrl = this.getLocalBridgeBaseUrl();
     const tradeUrl = `${localBaseUrl}/trade`;
 
+    const config = db.getConfig();
     // 1. Try Local MT5 Execution Bridge
     try {
       const res = await axios.post(tradeUrl, {
@@ -234,6 +260,8 @@ class XM360Client {
         stopLoss: orderParams.stopLoss,
         takeProfit: orderParams.takeProfit,
         account: accountId,
+        password: config.password,
+        server: config.serverName,
       }, { timeout: 5000 });
 
       if (res.data && (res.data.success || res.data.ticket || res.data.orderId)) {

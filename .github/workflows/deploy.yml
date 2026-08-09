@@ -1,4 +1,4 @@
-name: Deploy Backend & MT5 Bridge to GCP VM
+name: Deploy Backend to GCP VM
 
 on:
   push:
@@ -9,7 +9,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Deploy Backend & Setup Headless MT5 via SSH
+      - name: Deploy Backend via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.GCP_VM_HOST }}
@@ -28,29 +28,6 @@ jobs:
             npm run build
             
             # Restart Node.js backend engine on PM2 (Port 8444)
+            # The Node.js application automatically manages and restarts the Headless MT5 Docker container on boot!
             pm2 restart pm2.config.js || pm2 start pm2.config.js
             echo "✅ Backend successfully deployed and running on PM2!"
-
-            # Load environment variables from VM's .env file if present
-            if [ -f "$HOME/order-schedular-xm-backend/.env" ]; then
-              echo "🔑 Loading XM credentials from .env file..."
-              export $(grep -v '^#' $HOME/order-schedular-xm-backend/.env | xargs)
-            fi
-
-            # Automatically Start Headless XM MT5 Docker container if XM_ACCOUNT_ID & XM_PASSWORD are in .env
-            if [ -n "$XM_ACCOUNT_ID" ] && [ -n "$XM_PASSWORD" ]; then
-              echo "🐳 Ensuring Headless XM MT5 Docker container is running on port 8080..."
-              if ! sudo docker ps -a | grep -q xm-mt5-bridge; then
-                sudo docker run -d \
-                  --name xm-mt5-bridge \
-                  -e MT5_ACCOUNT="$XM_ACCOUNT_ID" \
-                  -e MT5_PASSWORD="$XM_PASSWORD" \
-                  -e MT5_SERVER="${XM_SERVER_NAME:-XMGlobal-Real 30}" \
-                  -p 8080:8080 \
-                  --restart always \
-                  gotson/docker-mt5 || true
-                echo "✅ Headless XM MT5 Docker container started from .env!"
-              else
-                echo "✅ Headless XM MT5 Docker container is already running."
-              fi
-            fi

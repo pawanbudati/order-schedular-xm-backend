@@ -3,7 +3,6 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import apiRouter from './routes/api.js';
 import { schedulerEngine } from './scheduler/engine.js';
-import { ensureDockerBridgeRunning } from './xm360/dockerBridgeManager.js';
 
 dotenv.config();
 
@@ -31,9 +30,6 @@ app.get('/health', (req, res) => {
 // Start engine & server
 async function startServer() {
   await schedulerEngine.init();
-
-  // Automatically ensure MT5 Docker Container is running on app boot/restart
-  await ensureDockerBridgeRunning();
 
   const host = '0.0.0.0';
   app.listen(Number(PORT), host, () => {

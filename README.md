@@ -2,21 +2,38 @@
 
 Standalone Node.js + TypeScript High-Precision Backend Engine for XM / MetaTrader Order Scheduling.
 
+## 🚀 How to Start the Backend Server
+
+### Development Mode (Auto-Reloading)
+```bash
+cd order-schedular-xm-backend
+npm install
+npm run dev
+```
+> Server runs on **`http://localhost:8444`** (or `PORT` specified in `.env`).
+
+### Production Mode
+```bash
+npm run build
+npm start
+```
+
+---
+
 ## ☁️ Deploying on Google Cloud Platform (GCP) VM
 
-### Option A: Standard Ubuntu/Debian Compute Engine VM
+### Standard Ubuntu/Debian Compute Engine VM Setup
 
 1. **Create a GCP VM Instance:**
    - In GCP Console ➔ **Compute Engine** ➔ **VM instances** ➔ **Create Instance**.
    - **Machine Type:** `e2-micro` or `e2-small` (Debian 12 or Ubuntu 22.04 LTS).
-   - **Firewall:** Check **Allow HTTP traffic** and **Allow HTTPS traffic**.
 
-2. **Allow Port 3001 in GCP Firewall:**
+2. **Allow Port 8444 in GCP Firewall:**
    - Go to **VPC network** ➔ **Firewall** ➔ **Create Firewall Rule**.
-   - Name: `allow-xm-scheduler-port-3001`
+   - Name: `allow-xm-scheduler-port-8444`
    - Target tags: `http-server`
    - Source IPv4 ranges: `0.0.0.0/0`
-   - Protocols and ports: Specified protocols and ports ➔ TCP: `3001`.
+   - Protocols and ports: Specified protocols and ports ➔ TCP: `8444`.
 
 3. **Deploy Code on VM via SSH:**
    ```bash
@@ -40,8 +57,8 @@ Standalone Node.js + TypeScript High-Precision Backend Engine for XM / MetaTrade
    ```
 
 4. **Verify Health Check:**
-   - Visit `http://YOUR_GCP_VM_EXTERNAL_IP:3001/health` in your browser.
+   - Visit `http://YOUR_GCP_VM_EXTERNAL_IP:8444/health` in your browser.
    - It should return `{"status":"ok"}`.
 
 5. **Connect Frontend:**
-   - Paste `http://YOUR_GCP_VM_EXTERNAL_IP:3001/api` in your GitHub Pages Web UI **API Settings** modal.
+   - Add `http://YOUR_GCP_VM_EXTERNAL_IP:8444/api` to your GitHub Repository Secret `VITE_API_BASE_URL` or enter it in the Web UI **API Settings** modal.

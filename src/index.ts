@@ -7,7 +7,7 @@ import { schedulerEngine } from './scheduler/engine.js';
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 8444;
 
 app.use(cors({
   origin: '*',

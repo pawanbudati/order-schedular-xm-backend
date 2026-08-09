@@ -17,12 +17,12 @@ jobs:
           key: ${{ secrets.GCP_VM_SSH_KEY }}
           script: |
             echo "🚀 Deploying order-schedular-xm-backend to GCP VM..."
-            if [ -d "~/order-schedular-xm-backend" ]; then
-              cd ~/order-schedular-xm-backend
-            else
-              cd ~
+            if [ ! -d "$HOME/order-schedular-xm-backend" ]; then
+              echo "Cloning repository for the first time..."
+              git clone https://github.com/pawanbudati/order-schedular-xm-backend.git $HOME/order-schedular-xm-backend
             fi
             
+            cd $HOME/order-schedular-xm-backend
             git pull origin main
             npm install
             npm run build

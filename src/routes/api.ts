@@ -3,6 +3,7 @@ import { xm360Client } from '../xm360/client.js';
 import { schedulerEngine } from '../scheduler/engine.js';
 import { db } from '../store/db.js';
 import { ScheduledOrder } from '../types/index.js';
+import { ensureDockerBridgeRunning } from '../xm360/dockerBridgeManager.js';
 
 const router = Router();
 
@@ -59,8 +60,9 @@ router.post('/config', (req, res) => {
     ...(recvWindow !== undefined && { recvWindow }),
   });
 
-  // Re-sync time with XM Broker Server
+  // Re-sync time with XM Broker Server & check/recreate MT5 Docker container if credentials updated
   xm360Client.syncServerTime();
+  ensureDockerBridgeRunning().catch(() => {});
 
   res.json({
     success: true,

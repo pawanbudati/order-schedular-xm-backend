@@ -8,8 +8,9 @@ const execAsync = util.promisify(exec);
 
 /**
  * Automatically ensures the Headless MT5 Docker Container is running on app boot/restart
+ * Auto-detects credential changes in .env / DB and recreates the container seamlessly.
  */
-export async function ensureDockerBridgeRunning(): Promise<void> {
+export async function ensureDockerBridgeRunning(forceRecreate: boolean = false): Promise<void> {
   const config = db.getConfig();
   const accountId = process.env.XM_ACCOUNT_ID || config.accountId;
   const password = process.env.XM_PASSWORD;
@@ -26,22 +27,46 @@ export async function ensureDockerBridgeRunning(): Promise<void> {
     const containerNames = stdout.split('\n').map(n => n.trim());
     const containerExists = containerNames.includes('xm-mt5-bridge');
 
-    if (!containerExists) {
-      console.log('🐳 MT5 Docker Manager: Starting Headless XM MT5 Docker container on port 8080...');
+    let needsRecreation = forceRecreate;
+
+    // Detect if credentials changed inside the container
+    if (containerExists && !forceRecreate) {
+      try {
+        const { stdout: envStdout } = await execAsync('docker inspect --format "{{json .Config.Env}}" xm-mt5-bridge');
+        const envArray: string[] = JSON.parse(envStdout || '[]');
+        const curAccount = envArray.find(e => e.startsWith('MT5_ACCOUNT='))?.split('=')[1] || '';
+        const curPassword = envArray.find(e => e.startsWith('MT5_PASSWORD='))?.split('=')[1] || '';
+        const curServer = envArray.find(e => e.startsWith('MT5_SERVER='))?.split('=')[1] || '';
+
+        if (curAccount !== accountId || curPassword !== password || curServer !== serverName) {
+          console.log('🔄 MT5 Docker Manager: Detected updated credentials! Recreating Docker container...');
+          needsRecreation = true;
+        }
+      } catch {
+        needsRecreation = false;
+      }
+    }
+
+    if (containerExists && needsRecreation) {
+      console.log('🛑 MT5 Docker Manager: Removing old container to apply new credentials...');
+      await execAsync('docker stop xm-mt5-bridge && docker rm xm-mt5-bridge').catch(() => {});
+    }
+
+    if (!containerExists || needsRecreation) {
+      console.log(`🐳 MT5 Docker Manager: Starting XM MT5 Docker container for account ${accountId}...`);
       const runCmd = `docker run -d --name xm-mt5-bridge -e MT5_ACCOUNT="${accountId}" -e MT5_PASSWORD="${password}" -e MT5_SERVER="${serverName}" -p 8080:8080 --restart always gotson/docker-mt5`;
       await execAsync(runCmd);
-      console.log('✅ MT5 Docker Manager: Headless XM MT5 Docker container started successfully!');
+      console.log('✅ MT5 Docker Manager: XM MT5 Docker container started successfully!');
     } else {
       const { stdout: runningStdout } = await execAsync('docker ps --format "{{.Names}}"');
-      const runningNames = runningStdout.split('\n').map(n => n.trim());
-      const isRunning = runningNames.includes('xm-mt5-bridge');
+      const isRunning = runningStdout.split('\n').map(n => n.trim()).includes('xm-mt5-bridge');
 
       if (!isRunning) {
-        console.log('🔄 MT5 Docker Manager: Restarting existing xm-mt5-bridge container...');
+        console.log('🔄 MT5 Docker Manager: Starting existing xm-mt5-bridge container...');
         await execAsync('docker start xm-mt5-bridge');
-        console.log('✅ MT5 Docker Manager: Headless XM MT5 Docker container restarted!');
+        console.log('✅ MT5 Docker Manager: XM MT5 Docker container restarted!');
       } else {
-        console.log('✅ MT5 Docker Manager: Headless XM MT5 Docker container is active and running on port 8080.');
+        console.log(`✅ MT5 Docker Manager: XM MT5 Docker container is active on port 8080 (Account: ${accountId}).`);
       }
     }
   } catch (err: any) {

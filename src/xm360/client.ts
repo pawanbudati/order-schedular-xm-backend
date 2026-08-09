@@ -84,6 +84,32 @@ class XM360Client {
 
   public async connectLocalBridge(): Promise<{ success: boolean; message: string; details?: any }> {
     const config = db.getConfig();
+    const token = this.getApiToken();
+    const accountId = this.getAccountId();
+
+    if (!accountId) {
+      return { success: false, message: 'Missing Account ID. Please fill and save credentials first.' };
+    }
+
+    // If using MetaApi Cloud (token provided and not a localhost URL)
+    if (token && !token.startsWith('http')) {
+      try {
+        const sync = await this.syncServerTime();
+        if (sync && sync.serverTime) {
+          return {
+            success: true,
+            message: `Successfully connected to MetaApi Cloud for Account ${accountId}!`,
+            details: { serverTime: sync.serverTime, offsetMs: sync.offsetMs },
+          };
+        }
+      } catch (err: any) {
+        return {
+          success: false,
+          message: `MetaApi Cloud Connection Failed: ${err.message || 'Invalid Token or Account ID'}`,
+        };
+      }
+    }
+
     const localBaseUrl = this.getLocalBridgeBaseUrl();
     if (!config.accountId || !config.password) {
       return { success: false, message: 'Missing XM Account ID or Password. Please fill and save credentials first.' };

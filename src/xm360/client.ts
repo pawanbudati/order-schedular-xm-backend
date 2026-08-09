@@ -242,32 +242,72 @@ class XM360Client {
 
     try {
       const data = await this.callMetaApi(apiToken, accountId, '/account-information', 'GET');
-      const balance = parseFloat(data.balance || '0');
-      const equity = parseFloat(data.equity || data.balance || '0');
-      const freeMargin = parseFloat(data.freeMargin || data.marginFree || '0');
-      const usedMargin = parseFloat(data.margin || '0');
+      if (data && (data.balance !== undefined || data.equity !== undefined)) {
+        const balance = parseFloat(data.balance || '0');
+        const equity = parseFloat(data.equity || data.balance || '0');
+        const freeMargin = parseFloat(data.freeMargin || data.marginFree || '0');
+        const usedMargin = parseFloat(data.margin || '0');
 
-      return {
-        asset: data.currency || 'USD',
-        balance,
-        equity,
-        availableMargin: freeMargin,
-        usedMargin,
-        currency: data.currency || 'USD',
-        marginLevel: usedMargin > 0 ? (equity / usedMargin) * 100 : 0,
-      };
+        return {
+          asset: data.currency || 'USD',
+          balance,
+          equity,
+          availableMargin: freeMargin,
+          usedMargin,
+          currency: data.currency || 'USD',
+          marginLevel: usedMargin > 0 ? (equity / usedMargin) * 100 : 0,
+        };
+      }
     } catch (err: any) {
-      // If balance fetch fails, return zeroed balance object so UI remains functional
-      return {
-        asset: 'USD',
-        balance: 0,
-        equity: 0,
-        availableMargin: 0,
-        usedMargin: 0,
-        currency: 'USD',
-        marginLevel: 0,
-      };
+      console.warn('MetaApi client /account-information notice:', err.message);
     }
+
+    // 3. Try MetaApi Provisioning API cached accountInformation
+    try {
+      const provRes = await axios.get('https://mt-provisioning-api-v1.agium.metaapi.cloud/users/current/accounts', {
+        headers: { 'auth-token': apiToken },
+        httpsAgent: this.httpsAgent,
+        timeout: 5000,
+      });
+
+      if (Array.isArray(provRes.data)) {
+        const found = provRes.data.find((acc: any) =>
+          acc.id === accountId ||
+          String(acc.login) === String(accountId) ||
+          String(acc.accountInformation?.login) === String(accountId)
+        );
+
+        const info = found?.accountInformation || found;
+        if (info && (info.balance !== undefined || info.equity !== undefined)) {
+          const balance = parseFloat(info.balance || '0');
+          const equity = parseFloat(info.equity || info.balance || '0');
+          const freeMargin = parseFloat(info.freeMargin || info.marginFree || '0');
+          const usedMargin = parseFloat(info.margin || '0');
+
+          return {
+            asset: info.currency || 'USD',
+            balance,
+            equity,
+            availableMargin: freeMargin,
+            usedMargin,
+            currency: info.currency || 'USD',
+            marginLevel: usedMargin > 0 ? (equity / usedMargin) * 100 : 0,
+          };
+        }
+      }
+    } catch (err: any) {
+      console.warn('MetaApi provisioning accountInformation notice:', err.message);
+    }
+
+    return {
+      asset: 'USD',
+      balance: 0,
+      equity: 0,
+      availableMargin: 0,
+      usedMargin: 0,
+      currency: 'USD',
+      marginLevel: 0,
+    };
   }
 
   /**

@@ -23,7 +23,8 @@ app.use('/', apiRouter);
 
 // Health check
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', time: new Date().toISOString() });
+  const istTime = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) + ' IST';
+  res.json({ status: 'ok', timeIST: istTime, timestamp: Date.now() });
 });
 
 // Start engine & server

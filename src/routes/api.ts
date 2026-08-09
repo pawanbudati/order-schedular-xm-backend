@@ -7,6 +7,27 @@ import { ScheduledOrder } from '../types/index.js';
 const router = Router();
 
 // System Status & Clock Sync Info
+const formatIST = (timestamp: number): string => {
+  const date = new Date(timestamp);
+  const parts = new Intl.DateTimeFormat('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).formatToParts(date);
+
+  const map: Record<string, string> = {};
+  parts.forEach(p => { map[p.type] = p.value; });
+  const ms = String(date.getMilliseconds()).padStart(3, '0');
+
+  return `${map.year}-${map.month}-${map.day} ${map.hour}:${map.minute}:${map.second}.${ms} IST`;
+};
+
+// System Status & Clock Sync Info
 router.get('/status', async (req, res) => {
   const sync = await xm360Client.syncServerTime();
   const config = db.getConfig();
@@ -14,7 +35,9 @@ router.get('/status', async (req, res) => {
   res.json({
     status: 'online',
     serverTime: sync.serverTime,
+    serverTimeIST: formatIST(sync.serverTime),
     localTime: sync.localTime,
+    localTimeIST: formatIST(sync.localTime),
     offsetMs: sync.offsetMs,
     hasApiKeys: Boolean(config.apiToken && config.accountId),
     isDemo: config.isDemo,
@@ -82,8 +105,7 @@ router.post('/schedule', (req, res) => {
     }
 
     const id = `ORD-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
-    const targetDate = new Date(Number(targetTime));
-    const targetTimeFormatted = targetDate.toISOString().replace('T', ' ').replace('Z', ' UTC');
+    const targetTimeFormatted = formatIST(Number(targetTime));
 
     const newOrder: ScheduledOrder = {
       id,

@@ -35,6 +35,39 @@ class XM360Client {
   }
 
   /**
+   * Auto-resolve numeric MT5 account login to MetaApi 36-char Account UUID
+   */
+  private async resolveMetaApiAccountId(apiToken: string, accountId: string): Promise<string> {
+    if (!accountId) return accountId;
+    if (accountId.includes('-') && accountId.length > 20) {
+      return accountId;
+    }
+
+    try {
+      const provRes = await axios.get('https://mt-provisioning-api-v1.agium.metaapi.cloud/users/current/accounts', {
+        headers: { 'auth-token': apiToken },
+        httpsAgent: this.httpsAgent,
+        timeout: 5000,
+      });
+
+      if (Array.isArray(provRes.data)) {
+        const found = provRes.data.find((acc: any) =>
+          String(acc.login) === String(accountId) ||
+          String(acc.accountInformation?.login) === String(accountId) ||
+          acc.id === accountId
+        );
+        if (found && found.id) {
+          return found.id;
+        }
+      }
+    } catch (err: any) {
+      console.warn('MetaApi provisioning account lookup notice:', err.message);
+    }
+
+    return accountId;
+  }
+
+  /**
    * Synchronize local clock with XM Broker / Server Time
    */
   public async syncServerTime(): Promise<XM360ServerTime> {
@@ -44,7 +77,8 @@ class XM360Client {
       const accountId = this.getAccountId();
 
       if (apiToken && accountId) {
-        const res = await this.client.get(`/users/current/accounts/${accountId}/time`, {
+        const targetAccountId = await this.resolveMetaApiAccountId(apiToken, accountId);
+        const res = await this.client.get(`/users/current/accounts/${targetAccountId}/time`, {
           headers: { 'auth-token': apiToken },
         });
         const localEnd = Date.now();
@@ -188,7 +222,8 @@ class XM360Client {
     }
 
     try {
-      const res = await this.client.get(`/users/current/accounts/${accountId}/account-information`, {
+      const targetAccountId = await this.resolveMetaApiAccountId(apiToken, accountId);
+      const res = await this.client.get(`/users/current/accounts/${targetAccountId}/account-information`, {
         headers: { 'auth-token': apiToken },
       });
 
@@ -324,7 +359,8 @@ class XM360Client {
     // 2. MetaApi Cloud REST API Fallback
     if (apiToken && !apiToken.startsWith('http') && apiToken !== 'LOCAL') {
       try {
-        const res = await this.client.post(`/users/current/accounts/${accountId}/trade`, {
+        const targetAccountId = await this.resolveMetaApiAccountId(apiToken, accountId);
+        const res = await this.client.post(`/users/current/accounts/${targetAccountId}/trade`, {
           symbol: orderParams.symbol,
           actionType: orderParams.side === 'BUY' ? 'ORDER_TYPE_BUY' : 'ORDER_TYPE_SELL',
           volume: orderParams.quantity,

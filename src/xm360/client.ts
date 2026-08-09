@@ -77,9 +77,35 @@ class XM360Client {
   /**
    * Get XM Account Balance, Equity, & Free Margin
    */
+  /**
+   * Get XM Account Balance, Equity, & Free Margin
+   */
   public async getAccountBalance(): Promise<XM360AccountBalance> {
     const apiToken = this.getApiToken();
     const accountId = this.getAccountId();
+    const localBridgeUrl = process.env.LOCAL_MT5_BRIDGE_URL || 'http://localhost:8080';
+
+    // 1. Try Local MT5 Bridge first if running
+    try {
+      const localRes = await axios.get(`${localBridgeUrl}/account`, { timeout: 2000 });
+      if (localRes.data && (localRes.data.balance !== undefined || localRes.data.equity !== undefined)) {
+        const b = parseFloat(localRes.data.balance || '0');
+        const e = parseFloat(localRes.data.equity || localRes.data.balance || '0');
+        const fm = parseFloat(localRes.data.freeMargin || localRes.data.marginFree || '0');
+        const um = parseFloat(localRes.data.usedMargin || localRes.data.margin || '0');
+        return {
+          asset: localRes.data.currency || 'USD',
+          balance: b,
+          equity: e,
+          availableMargin: fm,
+          usedMargin: um,
+          currency: localRes.data.currency || 'USD',
+          marginLevel: um > 0 ? (e / um) * 100 : 0,
+        };
+      }
+    } catch {
+      // Local bridge not active or /account not implemented yet, fallback to MetaApi cloud
+    }
 
     if (!apiToken && !accountId) {
       throw new Error('No XM MetaTrader account configured. Please click API Settings to connect your account.');
@@ -117,6 +143,17 @@ class XM360Client {
   public async getTickers(): Promise<XM360Ticker[]> {
     const apiToken = this.getApiToken();
     const accountId = this.getAccountId();
+    const localBridgeUrl = process.env.LOCAL_MT5_BRIDGE_URL || 'http://localhost:8080';
+
+    // 1. Try Local MT5 Bridge tickers
+    try {
+      const localRes = await axios.get(`${localBridgeUrl}/tickers`, { timeout: 2000 });
+      if (localRes.data && Array.isArray(localRes.data.data) && localRes.data.data.length > 0) {
+        return localRes.data.data;
+      }
+    } catch {
+      // Local bridge not active, fallback to MetaApi cloud
+    }
 
     if (apiToken && accountId) {
       try {

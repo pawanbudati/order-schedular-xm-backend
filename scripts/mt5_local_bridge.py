@@ -22,6 +22,49 @@ app = Flask(__name__)
 def health():
     return jsonify({"status": "ok", "mt5_connected": MT5_AVAILABLE and mt5.terminal_info() is not None})
 
+@app.route('/account', methods=['GET'])
+def get_account_info():
+    if not MT5_AVAILABLE or not mt5.initialize():
+        return jsonify({"success": False, "error": "MT5 terminal not connected"}), 500
+    
+    acc = mt5.account_info()
+    if acc is None:
+        return jsonify({"success": False, "error": "Failed to fetch account info"}), 500
+
+    return jsonify({
+        "success": True,
+        "balance": acc.balance,
+        "equity": acc.equity,
+        "freeMargin": acc.margin_free,
+        "usedMargin": acc.margin,
+        "currency": acc.currency,
+        "marginLevel": acc.margin_level
+    })
+
+@app.route('/tickers', methods=['GET'])
+def get_tickers():
+    if not MT5_AVAILABLE or not mt5.initialize():
+        return jsonify({"success": False, "error": "MT5 terminal not connected"}), 500
+
+    symbols = ["XAUUSD", "EURUSD", "GBPUSD", "USDJPY", "US30", "US500", "BTCUSD"]
+    tickers = []
+    for sym in symbols:
+        mt5.symbol_select(sym, True)
+        tick = mt5.symbol_info_tick(sym)
+        if tick:
+            tickers.append({
+                "symbol": sym,
+                "lastPrice": tick.ask,
+                "bidPrice": tick.bid,
+                "askPrice": tick.ask,
+                "priceChangePercent": 0.0,
+                "high24h": tick.ask,
+                "low24h": tick.bid,
+                "volume24h": float(tick.volume),
+                "spread": round(tick.ask - tick.bid, 5)
+            })
+    return jsonify({"success": True, "data": tickers})
+
 @app.route('/trade', methods=['POST'])
 def place_trade():
     if not MT5_AVAILABLE:

@@ -12,12 +12,12 @@ const execAsync = util.promisify(exec);
  */
 export async function ensureDockerBridgeRunning(forceRecreate: boolean = false): Promise<void> {
   const config = db.getConfig();
-  const accountId = process.env.XM_ACCOUNT_ID || config.accountId;
-  const password = process.env.XM_PASSWORD;
-  const serverName = process.env.XM_SERVER_NAME || config.serverName || 'XMGlobal-Real 30';
+  const accountId = config.accountId || process.env.XM_ACCOUNT_ID;
+  const password = config.password || process.env.XM_PASSWORD;
+  const serverName = config.serverName || process.env.XM_SERVER_NAME || 'XMGlobal-Real 30';
 
   if (!accountId || !password) {
-    console.log('ℹ️ MT5 Docker Manager: XM_ACCOUNT_ID or XM_PASSWORD not found in .env / DB. Skipping auto Docker container startup.');
+    console.log('ℹ️ MT5 Docker Manager: XM_ACCOUNT_ID or XM_PASSWORD not found in DB / .env. Skipping auto Docker container startup.');
     return;
   }
 

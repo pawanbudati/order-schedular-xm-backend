@@ -11,22 +11,18 @@ jobs:
     steps:
       - name: Deploy to GCP VM via SSH
         uses: appleboy/ssh-action@v1.0.3
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           host: ${{ secrets.GCP_VM_HOST }}
           username: ${{ secrets.GCP_VM_USERNAME }}
           key: ${{ secrets.GCP_VM_SSH_KEY }}
-          envs: GH_TOKEN
           script: |
             echo "🚀 Deploying order-schedular-xm-backend to GCP VM..."
             if [ ! -d "$HOME/order-schedular-xm-backend" ]; then
               echo "Cloning repository for the first time..."
-              git clone https://x-access-token:${GH_TOKEN}@github.com/pawanbudati/order-schedular-xm-backend.git $HOME/order-schedular-xm-backend
+              git clone https://github.com/pawanbudati/order-schedular-xm-backend.git $HOME/order-schedular-xm-backend
             fi
             
             cd $HOME/order-schedular-xm-backend
-            git remote set-url origin https://x-access-token:${GH_TOKEN}@github.com/pawanbudati/order-schedular-xm-backend.git
             git pull origin main
             npm install
             npm run build

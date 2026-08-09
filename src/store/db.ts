@@ -16,7 +16,6 @@ const DEFAULT_CONFIG: XM360Config = {
   password: process.env.XM_PASSWORD || '',
   serverName: process.env.XM_SERVER_NAME || 'XMGlobal-Real 30',
   platform: (process.env.XM_PLATFORM as 'MT4' | 'MT5') || 'MT5',
-  isDemo: true,
   recvWindow: 5000,
 };
 

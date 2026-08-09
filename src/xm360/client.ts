@@ -81,17 +81,8 @@ class XM360Client {
     const apiToken = this.getApiToken();
     const accountId = this.getAccountId();
 
-    if (!apiToken || !accountId) {
-      // Simulation mode default for UI testing when keys not set
-      return {
-        asset: 'USD',
-        balance: 5000.0,
-        equity: 5000.0,
-        availableMargin: 5000.0,
-        usedMargin: 0.0,
-        currency: 'USD',
-        marginLevel: 9999.0,
-      };
+    if (!apiToken && !accountId) {
+      throw new Error('No XM MetaTrader account configured. Please click API Settings to connect your account.');
     }
 
     try {
@@ -100,9 +91,9 @@ class XM360Client {
       });
 
       const data = res.data || {};
-      const balance = parseFloat(data.balance || '5000');
-      const equity = parseFloat(data.equity || data.balance || '5000');
-      const freeMargin = parseFloat(data.freeMargin || data.marginFree || '5000');
+      const balance = parseFloat(data.balance || '0');
+      const equity = parseFloat(data.equity || data.balance || '0');
+      const freeMargin = parseFloat(data.freeMargin || data.marginFree || '0');
       const usedMargin = parseFloat(data.margin || '0');
 
       return {
@@ -112,7 +103,7 @@ class XM360Client {
         availableMargin: freeMargin,
         usedMargin,
         currency: data.currency || 'USD',
-        marginLevel: usedMargin > 0 ? (equity / usedMargin) * 100 : 9999,
+        marginLevel: usedMargin > 0 ? (equity / usedMargin) * 100 : 0,
       };
     } catch (err: any) {
       console.error('XM360 getAccountBalance error:', err.response?.data || err.message);
@@ -133,33 +124,33 @@ class XM360Client {
           headers: { 'auth-token': apiToken },
         });
 
-        if (Array.isArray(res.data)) {
+        if (Array.isArray(res.data) && res.data.length > 0) {
           return res.data.slice(0, 10).map((s: any) => ({
             symbol: s.symbol || s.name,
             lastPrice: parseFloat(s.ask || s.bid || '0'),
             bidPrice: parseFloat(s.bid || '0'),
             askPrice: parseFloat(s.ask || '0'),
-            priceChangePercent: parseFloat(s.priceChangePercent || '0.35'),
+            priceChangePercent: parseFloat(s.priceChangePercent || '0'),
             high24h: parseFloat(s.high || '0'),
             low24h: parseFloat(s.low || '0'),
-            volume24h: parseFloat(s.volume || '1000'),
-            spread: parseFloat(s.spread || '0.15'),
+            volume24h: parseFloat(s.volume || '0'),
+            spread: parseFloat(s.spread || '0'),
           }));
         }
       } catch (err: any) {
-        console.warn('Using default XM ticker pair benchmarks');
+        console.warn('XM Ticker fetch notice:', err.message);
       }
     }
 
-    // Default XM Popular Trading Pairs (Gold XAUUSD, Forex Majors, Indices)
+    // Standard XM Supported Instruments (without fake mock prices)
     return [
-      { symbol: 'XAUUSD', lastPrice: 2435.50, bidPrice: 2435.35, askPrice: 2435.65, priceChangePercent: 0.85, high24h: 2448.00, low24h: 2422.10, volume24h: 890500, spread: 0.30 },
-      { symbol: 'EURUSD', lastPrice: 1.0925, bidPrice: 1.0924, askPrice: 1.0926, priceChangePercent: -0.15, high24h: 1.0955, low24h: 1.0910, volume24h: 1240100, spread: 0.0002 },
-      { symbol: 'GBPUSD', lastPrice: 1.2840, bidPrice: 1.2839, askPrice: 1.2841, priceChangePercent: 0.32, high24h: 1.2875, low24h: 1.2810, volume24h: 650300, spread: 0.0002 },
-      { symbol: 'USDJPY', lastPrice: 147.20, bidPrice: 147.19, askPrice: 147.21, priceChangePercent: 0.45, high24h: 147.80, low24h: 146.50, volume24h: 780900, spread: 0.02 },
-      { symbol: 'US30', lastPrice: 39450.0, bidPrice: 39448.0, askPrice: 39452.0, priceChangePercent: 0.65, high24h: 39600.0, low24h: 39300.0, volume24h: 420100, spread: 4.0 },
-      { symbol: 'US500', lastPrice: 5420.5, bidPrice: 5420.0, askPrice: 5421.0, priceChangePercent: 0.52, high24h: 5440.0, low24h: 5400.0, volume24h: 510200, spread: 1.0 },
-      { symbol: 'BTCUSD', lastPrice: 95500.0, bidPrice: 95480.0, askPrice: 95520.0, priceChangePercent: 2.15, high24h: 96200.0, low24h: 94100.0, volume24h: 1540200, spread: 40.0 },
+      { symbol: 'XAUUSD', lastPrice: 0, bidPrice: 0, askPrice: 0, priceChangePercent: 0, high24h: 0, low24h: 0, volume24h: 0, spread: 0 },
+      { symbol: 'EURUSD', lastPrice: 0, bidPrice: 0, askPrice: 0, priceChangePercent: 0, high24h: 0, low24h: 0, volume24h: 0, spread: 0 },
+      { symbol: 'GBPUSD', lastPrice: 0, bidPrice: 0, askPrice: 0, priceChangePercent: 0, high24h: 0, low24h: 0, volume24h: 0, spread: 0 },
+      { symbol: 'USDJPY', lastPrice: 0, bidPrice: 0, askPrice: 0, priceChangePercent: 0, high24h: 0, low24h: 0, volume24h: 0, spread: 0 },
+      { symbol: 'US30', lastPrice: 0, bidPrice: 0, askPrice: 0, priceChangePercent: 0, high24h: 0, low24h: 0, volume24h: 0, spread: 0 },
+      { symbol: 'US500', lastPrice: 0, bidPrice: 0, askPrice: 0, priceChangePercent: 0, high24h: 0, low24h: 0, volume24h: 0, spread: 0 },
+      { symbol: 'BTCUSD', lastPrice: 0, bidPrice: 0, askPrice: 0, priceChangePercent: 0, high24h: 0, low24h: 0, volume24h: 0, spread: 0 },
     ];
   }
 
@@ -210,19 +201,11 @@ class XM360Client {
       }
     }
 
-    // 2. Simulation Mode when API credentials are not set
-    if (!apiToken || !accountId) {
+    // 2. Error if API credentials are not set
+    if (!apiToken && !accountId) {
       return {
-        success: true,
-        orderId: `XM-SIM-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-        rawResponse: {
-          simulated: true,
-          platform: 'XM360 MetaTrader',
-          symbol: orderParams.symbol,
-          lots: orderParams.quantity,
-          side: orderParams.side,
-          note: 'Executed in XM360 Simulation Mode (Configure Access Token or Local VM Bridge in settings for live execution)',
-        },
+        success: false,
+        error: 'Cannot execute order: No XM MetaTrader account configured. Please click API Settings to connect your account.',
       };
     }
 

@@ -41,8 +41,7 @@ router.get('/status', async (req, res) => {
     localTime: sync.localTime,
     localTimeIST: formatIST(sync.localTime),
     offsetMs: sync.offsetMs,
-    hasApiKeys: Boolean(config.apiToken && config.accountId),
-    isDemo: config.isDemo,
+    hasApiKeys: Boolean((config.apiToken || config.password) && config.accountId),
     accountId: config.accountId,
     serverName: config.serverName,
     platform: config.platform,
@@ -52,14 +51,13 @@ router.get('/status', async (req, res) => {
 
 // Update XM360 API Configuration
 router.post('/config', (req, res) => {
-  const { apiToken, accountId, password, serverName, platform, isDemo, recvWindow } = req.body;
+  const { apiToken, accountId, password, serverName, platform, recvWindow } = req.body;
   const updated = db.updateConfig({
     ...(apiToken !== undefined && { apiToken }),
     ...(accountId !== undefined && { accountId }),
     ...(password !== undefined && { password }),
     ...(serverName !== undefined && { serverName }),
     ...(platform !== undefined && { platform }),
-    ...(isDemo !== undefined && { isDemo }),
     ...(recvWindow !== undefined && { recvWindow }),
   });
 
@@ -74,7 +72,6 @@ router.post('/config', (req, res) => {
       accountId: updated.accountId,
       serverName: updated.serverName,
       platform: updated.platform,
-      isDemo: updated.isDemo,
       recvWindow: updated.recvWindow,
       hasPassword: Boolean(updated.password),
     },

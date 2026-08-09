@@ -4,7 +4,6 @@ export interface XM360Config {
   password?: string;
   serverName: string; // e.g. "XMGlobal-Real 30" or "XMGlobal-Demo"
   platform: 'MT4' | 'MT5';
-  isDemo: boolean;
   recvWindow: number;
 }
 

@@ -1,0 +1,18 @@
+# Dependencies
+node_modules/
+
+# Build Output
+dist/
+
+# Local Environment & Secrets
+.env
+.env.local
+.env.*.local
+
+# Persistent Database State
+data.json
+
+# OS & Log Files
+.DS_Store
+Thumbs.db
+*.log

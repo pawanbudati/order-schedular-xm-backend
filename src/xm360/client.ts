@@ -15,7 +15,7 @@ class XM360Client {
     this.httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 50 });
 
     this.client = axios.create({
-      baseURL: process.env.XM_API_BASE_URL || 'https://mt-client-api.agium.cloud',
+      baseURL: process.env.XM_API_BASE_URL || 'https://mt-client-api.agium.metaapi.cloud',
       timeout: 10000,
       httpAgent: this.httpAgent,
       httpsAgent: this.httpsAgent,

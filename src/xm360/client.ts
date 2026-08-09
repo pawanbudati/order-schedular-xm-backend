@@ -35,13 +35,10 @@ class XM360Client {
   }
 
   /**
-   * Auto-resolve numeric MT5 account login to MetaApi 36-char Account UUID
+   * Auto-resolve numeric MT5 account login to MetaApi 36-char Account UUID & Cluster Region
    */
-  private async resolveMetaApiAccountId(apiToken: string, accountId: string): Promise<string> {
-    if (!accountId) return accountId;
-    if (accountId.includes('-') && accountId.length > 20) {
-      return accountId;
-    }
+  private async resolveMetaApiAccount(apiToken: string, accountId: string): Promise<{ id: string; region: string }> {
+    if (!accountId) return { id: accountId, region: 'agium' };
 
     try {
       const provRes = await axios.get('https://mt-provisioning-api-v1.agium.metaapi.cloud/users/current/accounts', {
@@ -52,19 +49,44 @@ class XM360Client {
 
       if (Array.isArray(provRes.data)) {
         const found = provRes.data.find((acc: any) =>
+          acc.id === accountId ||
           String(acc.login) === String(accountId) ||
-          String(acc.accountInformation?.login) === String(accountId) ||
-          acc.id === accountId
+          String(acc.accountInformation?.login) === String(accountId)
         );
+
         if (found && found.id) {
-          return found.id;
+          return {
+            id: found.id,
+            region: found.region || 'agium',
+          };
         }
       }
     } catch (err: any) {
       console.warn('MetaApi provisioning account lookup notice:', err.message);
     }
 
-    return accountId;
+    return { id: accountId, region: 'agium' };
+  }
+
+  /**
+   * Universal MetaApi REST API Caller with automatic region & account UUID resolution
+   */
+  private async callMetaApi(apiToken: string, accountId: string, subPath: string, method: 'GET' | 'POST' = 'GET', postData?: any): Promise<any> {
+    const metaAcc = await this.resolveMetaApiAccount(apiToken, accountId);
+    const region = metaAcc.region || 'agium';
+    const baseUrl = `https://mt-client-api-v1.${region}.metaapi.cloud`;
+    const fullUrl = `${baseUrl}/users/current/accounts/${metaAcc.id}${subPath}`;
+
+    const res = await axios({
+      method,
+      url: fullUrl,
+      data: postData,
+      headers: { 'auth-token': apiToken },
+      httpsAgent: this.httpsAgent,
+      timeout: 10000,
+    });
+
+    return res.data;
   }
 
   /**
@@ -77,13 +99,10 @@ class XM360Client {
       const accountId = this.getAccountId();
 
       if (apiToken && accountId) {
-        const targetAccountId = await this.resolveMetaApiAccountId(apiToken, accountId);
-        const res = await this.client.get(`/users/current/accounts/${targetAccountId}/time`, {
-          headers: { 'auth-token': apiToken },
-        });
+        const data = await this.callMetaApi(apiToken, accountId, '/time', 'GET');
         const localEnd = Date.now();
         const rtt = localEnd - localStart;
-        const serverTime = res.data?.serverTime ? new Date(res.data.serverTime).getTime() : Date.now();
+        const serverTime = data?.serverTime ? new Date(data.serverTime).getTime() : Date.now();
         const adjustedServerTime = serverTime + Math.round(rtt / 2);
         this.serverTimeOffset = adjustedServerTime - localEnd;
 
@@ -222,12 +241,7 @@ class XM360Client {
     }
 
     try {
-      const targetAccountId = await this.resolveMetaApiAccountId(apiToken, accountId);
-      const res = await this.client.get(`/users/current/accounts/${targetAccountId}/account-information`, {
-        headers: { 'auth-token': apiToken },
-      });
-
-      const data = res.data || {};
+      const data = await this.callMetaApi(apiToken, accountId, '/account-information', 'GET');
       const balance = parseFloat(data.balance || '0');
       const equity = parseFloat(data.equity || data.balance || '0');
       const freeMargin = parseFloat(data.freeMargin || data.marginFree || '0');
@@ -276,12 +290,9 @@ class XM360Client {
 
     if (apiToken && accountId) {
       try {
-        const res = await this.client.get(`/users/current/accounts/${accountId}/symbols`, {
-          headers: { 'auth-token': apiToken },
-        });
-
-        if (Array.isArray(res.data) && res.data.length > 0) {
-          return res.data.slice(0, 10).map((s: any) => ({
+        const resData = await this.callMetaApi(apiToken, accountId, '/symbols', 'GET');
+        if (Array.isArray(resData) && resData.length > 0) {
+          return resData.slice(0, 10).map((s: any) => ({
             symbol: s.symbol || s.name,
             lastPrice: parseFloat(s.ask || s.bid || '0'),
             bidPrice: parseFloat(s.bid || '0'),
@@ -359,22 +370,19 @@ class XM360Client {
     // 2. MetaApi Cloud REST API Fallback
     if (apiToken && !apiToken.startsWith('http') && apiToken !== 'LOCAL') {
       try {
-        const targetAccountId = await this.resolveMetaApiAccountId(apiToken, accountId);
-        const res = await this.client.post(`/users/current/accounts/${targetAccountId}/trade`, {
+        const resData = await this.callMetaApi(apiToken, accountId, '/trade', 'POST', {
           symbol: orderParams.symbol,
           actionType: orderParams.side === 'BUY' ? 'ORDER_TYPE_BUY' : 'ORDER_TYPE_SELL',
           volume: orderParams.quantity,
           openPrice: orderParams.price,
           stopLoss: orderParams.stopLoss,
           takeProfit: orderParams.takeProfit,
-        }, {
-          headers: { 'auth-token': apiToken },
         });
 
         return {
           success: true,
-          orderId: res.data?.numericCode || res.data?.stringCode || `METAAPI-${Date.now()}`,
-          rawResponse: res.data,
+          orderId: resData?.numericCode || resData?.stringCode || `METAAPI-${Date.now()}`,
+          rawResponse: resData,
         };
       } catch (err: any) {
         return {
@@ -387,7 +395,7 @@ class XM360Client {
 
     return {
       success: false,
-      error: `MT5 Bridge Connection Refused at ${tradeUrl}. Ensure MT5 Bridge (python scripts/mt5_local_bridge.py or Docker container) is active on port 8080, or enter a valid MetaApi Token in API Settings.`,
+      error: `MT5 Bridge Connection Refused at ${tradeUrl}. Ensure MetaApi Access Token & Account ID are configured in API Settings.`,
     };
   }
 }

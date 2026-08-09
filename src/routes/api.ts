@@ -138,7 +138,7 @@ router.post('/schedule', (req, res) => {
       type: type === 'LIMIT' ? 'LIMIT' : 'MARKET',
       price: price ? parseFloat(price) : undefined,
       quantity: parseFloat(quantity),
-      leverage: leverage ? parseInt(leverage, 10) : 100,
+      leverage: leverage ? parseInt(leverage, 10) : 1000,
       targetTime: Number(targetTime),
       targetTimeFormatted,
       status: 'PENDING',

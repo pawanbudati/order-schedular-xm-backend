@@ -79,7 +79,7 @@ class XM360Client {
     if (envUrl) return envUrl.replace(/\/$/, '');
     const token = this.getApiToken();
     if (token && token.startsWith('http')) return token.replace(/\/$/, '');
-    return 'http://127.0.0.1:8080';
+    return 'http://127.0.0.1:8555';
   }
 
   /**

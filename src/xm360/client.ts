@@ -110,9 +110,11 @@ class XM360Client {
         };
       }
     } catch (err: any) {
+      const bridgeErr = err.response?.data?.error || err.response?.data?.message || err.message;
       return {
         success: false,
-        message: `Local MT5 Bridge unreachable at ${localBaseUrl}. Ensure mt5_bridge.py is running on port 8555. Error: ${err.message}`,
+        message: `MT5 Bridge Error (${localBaseUrl}): ${bridgeErr}`,
+        details: err.response?.data,
       };
     }
   }

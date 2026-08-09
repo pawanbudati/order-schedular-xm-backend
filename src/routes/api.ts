@@ -83,7 +83,7 @@ router.post('/config/connect-mt5', async (req, res) => {
       res.status(400).json(result);
     }
   } catch (err: any) {
-    res.status(500).json({ success: false, message: err.message || 'Error connecting to local MT5 Bridge' });
+    res.status(400).json({ success: false, message: err.message || 'Error connecting to local MT5 Bridge' });
   }
 });
 

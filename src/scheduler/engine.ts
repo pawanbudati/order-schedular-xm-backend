@@ -147,7 +147,6 @@ class HighPrecisionSchedulerEngine {
           precisionDriftMs: driftMs,
           xmOrderId: result.orderId,
           brokerOrderId: result.orderId,
-          bingxOrderId: result.orderId,
         });
 
         db.addLog({

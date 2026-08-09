@@ -11,7 +11,7 @@ interface DatabaseSchema {
 const DB_FILE_PATH = path.resolve(process.cwd(), 'data.json');
 
 const DEFAULT_CONFIG: XM360Config = {
-  apiToken: process.env.XM_API_TOKEN || process.env.BINGX_API_KEY || '',
+  apiToken: process.env.XM_API_TOKEN || '',
   accountId: process.env.XM_ACCOUNT_ID || '',
   serverName: process.env.XM_SERVER_NAME || 'XMGlobal-Real 30',
   platform: (process.env.XM_PLATFORM as 'MT4' | 'MT5') || 'MT5',

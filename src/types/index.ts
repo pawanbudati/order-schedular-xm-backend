@@ -56,7 +56,6 @@ export interface ScheduledOrder extends ScheduledOrderRequest {
   precisionDriftMs?: number;
   xmOrderId?: string;
   brokerOrderId?: string;
-  bingxOrderId?: string; // legacy alias
   errorMessage?: string;
   createdAt: number;
 }

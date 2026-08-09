@@ -16,8 +16,10 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// API routes
+// API routes (support /api, /xm-api, and root routes)
 app.use('/api', apiRouter);
+app.use('/xm-api', apiRouter);
+app.use('/', apiRouter);
 
 // Health check
 app.get('/health', (req, res) => {

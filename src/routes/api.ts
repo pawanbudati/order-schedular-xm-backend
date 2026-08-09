@@ -3,7 +3,7 @@ import { xm360Client } from '../xm360/client.js';
 import { schedulerEngine } from '../scheduler/engine.js';
 import { db } from '../store/db.js';
 import { ScheduledOrder } from '../types/index.js';
-import { ensureDockerBridgeRunning } from '../xm360/dockerBridgeManager.js';
+import { ensureDockerBridgeRunning, getDockerStatus } from '../xm360/dockerBridgeManager.js';
 
 const router = Router();
 
@@ -32,6 +32,7 @@ const formatIST = (timestamp: number): string => {
 router.get('/status', async (req, res) => {
   const sync = await xm360Client.syncServerTime();
   const config = db.getConfig();
+  const mt5Status = await getDockerStatus();
 
   res.json({
     status: 'online',
@@ -45,15 +46,17 @@ router.get('/status', async (req, res) => {
     accountId: config.accountId,
     serverName: config.serverName,
     platform: config.platform,
+    mt5DockerStatus: mt5Status,
   });
 });
 
 // Update XM360 API Configuration
 router.post('/config', (req, res) => {
-  const { apiToken, accountId, serverName, platform, isDemo, recvWindow } = req.body;
+  const { apiToken, accountId, password, serverName, platform, isDemo, recvWindow } = req.body;
   const updated = db.updateConfig({
     ...(apiToken !== undefined && { apiToken }),
     ...(accountId !== undefined && { accountId }),
+    ...(password !== undefined && { password }),
     ...(serverName !== undefined && { serverName }),
     ...(platform !== undefined && { platform }),
     ...(isDemo !== undefined && { isDemo }),
@@ -73,8 +76,20 @@ router.post('/config', (req, res) => {
       platform: updated.platform,
       isDemo: updated.isDemo,
       recvWindow: updated.recvWindow,
+      hasPassword: Boolean(updated.password),
     },
   });
+});
+
+// Manual Trigger to Restart / Recreate MT5 Headless Docker Container
+router.post('/config/restart-mt5', async (req, res) => {
+  try {
+    await ensureDockerBridgeRunning(true);
+    const mt5Status = await getDockerStatus();
+    res.json({ success: true, message: 'Headless XM MT5 Docker container restarted successfully!', status: mt5Status });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 // Get Account Balance & Purchasing Power

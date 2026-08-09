@@ -73,3 +73,28 @@ export async function ensureDockerBridgeRunning(forceRecreate: boolean = false):
     console.warn('⚠️ MT5 Docker Manager Notice:', err.message || err);
   }
 }
+
+/**
+ * Get status of local Headless MT5 Docker container
+ */
+export async function getDockerStatus(): Promise<{ containerRunning: boolean; containerExists: boolean; accountId?: string }> {
+  try {
+    const { stdout } = await execAsync('docker ps -a --format "{{.Names}}"');
+    const containerNames = stdout.split('\n').map(n => n.trim());
+    const containerExists = containerNames.includes('xm-mt5-bridge');
+
+    if (!containerExists) {
+      return { containerRunning: false, containerExists: false };
+    }
+
+    const { stdout: runningStdout } = await execAsync('docker ps --format "{{.Names}}"');
+    const isRunning = runningStdout.split('\n').map(n => n.trim()).includes('xm-mt5-bridge');
+
+    const config = db.getConfig();
+    const accountId = process.env.XM_ACCOUNT_ID || config.accountId;
+
+    return { containerRunning: isRunning, containerExists: true, accountId };
+  } catch {
+    return { containerRunning: false, containerExists: false };
+  }
+}

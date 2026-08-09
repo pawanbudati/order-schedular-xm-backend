@@ -13,6 +13,7 @@ const DB_FILE_PATH = path.resolve(process.cwd(), 'data.json');
 const DEFAULT_CONFIG: XM360Config = {
   apiToken: process.env.XM_API_TOKEN || '',
   accountId: process.env.XM_ACCOUNT_ID || '',
+  password: process.env.XM_PASSWORD || '',
   serverName: process.env.XM_SERVER_NAME || 'XMGlobal-Real 30',
   platform: (process.env.XM_PLATFORM as 'MT4' | 'MT5') || 'MT5',
   isDemo: true,

@@ -89,6 +89,15 @@ class XM360Client {
     return res.data;
   }
 
+  private isMetaApiMode(): boolean {
+    const token = this.getApiToken();
+    if (!token) return false;
+    const cleanToken = token.trim().toUpperCase();
+    if (cleanToken.startsWith('HTTP://') || cleanToken.startsWith('HTTPS://')) return false;
+    if (cleanToken === 'LOCAL' || cleanToken === 'LOCAL_BRIDGE' || cleanToken === 'NONE') return false;
+    return true;
+  }
+
   /**
    * Synchronize local clock with XM Broker / Server Time
    */
@@ -98,7 +107,7 @@ class XM360Client {
       const apiToken = this.getApiToken();
       const accountId = this.getAccountId();
 
-      if (apiToken && accountId) {
+      if (this.isMetaApiMode() && accountId) {
         const data = await this.callMetaApi(apiToken, accountId, '/time', 'GET');
         const localEnd = Date.now();
         const rtt = localEnd - localStart;
@@ -131,7 +140,7 @@ class XM360Client {
     const envUrl = process.env.LOCAL_MT5_BRIDGE_URL;
     if (envUrl) return envUrl.replace(/\/$/, '');
     const token = this.getApiToken();
-    if (token && token.startsWith('http')) return token.replace(/\/$/, '');
+    if (token && (token.startsWith('http://') || token.startsWith('https://'))) return token.replace(/\/$/, '');
     return 'http://127.0.0.1:8555';
   }
 
@@ -144,8 +153,8 @@ class XM360Client {
       return { success: false, message: 'Missing Account ID. Please fill and save credentials first.' };
     }
 
-    // If using MetaApi Cloud (token provided and not a localhost URL)
-    if (token && !token.startsWith('http')) {
+    // If explicitly using MetaApi Cloud (valid cloud token provided, not a URL or LOCAL)
+    if (this.isMetaApiMode()) {
       try {
         const sync = await this.syncServerTime();
         if (sync && sync.serverTime) {
@@ -197,6 +206,7 @@ class XM360Client {
       };
     }
   }
+
 
   /**
    * Get XM Account Balance, Equity, & Free Margin

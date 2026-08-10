@@ -1,29 +1,14 @@
 import http from 'http';
-import https from 'https';
-import axios, { AxiosInstance } from 'axios';
+import axios from 'axios';
 import { db } from '../store/db.js';
 import { XM360AccountBalance, XM360ServerTime, XM360Ticker } from '../types/index.js';
 
 class XM360Client {
   private httpAgent: http.Agent;
-  private httpsAgent: https.Agent;
-  private client: AxiosInstance;
   private serverTimeOffset: number = 0; // serverTime - localTime
 
   constructor() {
     this.httpAgent = new http.Agent({ keepAlive: true, maxSockets: 50 });
-    this.httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 50, rejectUnauthorized: false });
-
-    this.client = axios.create({
-      baseURL: process.env.XM_API_BASE_URL || 'https://mt-client-api.agium.metaapi.cloud',
-      timeout: 10000,
-      httpAgent: this.httpAgent,
-      httpsAgent: this.httpsAgent,
-    });
-  }
-
-  private getApiToken(): string {
-    return db.getConfig().apiToken || process.env.XM_API_TOKEN || '';
   }
 
   private getAccountId(): string {
@@ -34,95 +19,34 @@ class XM360Client {
     return db.getConfig().serverName || process.env.XM_SERVER_NAME || 'XMGlobal-Real 30';
   }
 
-  /**
-   * Auto-resolve numeric MT5 account login to MetaApi 36-char Account UUID & Cluster Region
-   */
-  private async resolveMetaApiAccount(apiToken: string, accountId: string): Promise<{ id: string; region: string }> {
-    if (!accountId) return { id: accountId, region: 'agium' };
-
-    try {
-      const provRes = await axios.get('https://mt-provisioning-api-v1.agium.metaapi.cloud/users/current/accounts', {
-        headers: { 'auth-token': apiToken },
-        httpsAgent: this.httpsAgent,
-        timeout: 5000,
-      });
-
-      if (Array.isArray(provRes.data)) {
-        const found = provRes.data.find((acc: any) =>
-          acc.id === accountId ||
-          String(acc.login) === String(accountId) ||
-          String(acc.accountInformation?.login) === String(accountId)
-        );
-
-        if (found && found.id) {
-          return {
-            id: found.id,
-            region: found.region || 'agium',
-          };
-        }
-      }
-    } catch (err: any) {
-      console.warn('MetaApi provisioning account lookup notice:', err.message);
-    }
-
-    return { id: accountId, region: 'agium' };
+  private getLocalBridgeBaseUrl(): string {
+    const envUrl = process.env.LOCAL_MT5_BRIDGE_URL;
+    if (envUrl) return envUrl.replace(/\/$/, '');
+    return 'http://127.0.0.1:8555';
   }
 
   /**
-   * Universal MetaApi REST API Caller with automatic region & account UUID resolution
-   */
-  private async callMetaApi(apiToken: string, accountId: string, subPath: string, method: 'GET' | 'POST' = 'GET', postData?: any): Promise<any> {
-    const metaAcc = await this.resolveMetaApiAccount(apiToken, accountId);
-    const region = metaAcc.region || 'agium';
-    const baseUrl = `https://mt-client-api-v1.${region}.metaapi.cloud`;
-    const fullUrl = `${baseUrl}/users/current/accounts/${metaAcc.id}${subPath}`;
-
-    const res = await axios({
-      method,
-      url: fullUrl,
-      data: postData,
-      headers: { 'auth-token': apiToken },
-      httpsAgent: this.httpsAgent,
-      timeout: 10000,
-    });
-
-    return res.data;
-  }
-
-  private isMetaApiMode(): boolean {
-    const token = this.getApiToken();
-    if (!token) return false;
-    const cleanToken = token.trim().toUpperCase();
-    if (cleanToken.startsWith('HTTP://') || cleanToken.startsWith('HTTPS://')) return false;
-    if (cleanToken === 'LOCAL' || cleanToken === 'LOCAL_BRIDGE' || cleanToken === 'NONE') return false;
-    return true;
-  }
-
-  /**
-   * Synchronize local clock with XM Broker / Server Time
+   * Synchronize local clock with Local MT5 Bridge / Broker Time
    */
   public async syncServerTime(): Promise<XM360ServerTime> {
     const localStart = Date.now();
+    const localBaseUrl = this.getLocalBridgeBaseUrl();
+
     try {
-      const apiToken = this.getApiToken();
-      const accountId = this.getAccountId();
+      const res = await axios.get(`${localBaseUrl}/health`, { timeout: 2000 });
+      const localEnd = Date.now();
+      const rtt = localEnd - localStart;
+      const serverTime = res.data?.timestamp || Date.now();
+      const adjustedServerTime = serverTime + Math.round(rtt / 2);
+      this.serverTimeOffset = adjustedServerTime - localEnd;
 
-      if (this.isMetaApiMode() && accountId) {
-        const data = await this.callMetaApi(apiToken, accountId, '/time', 'GET');
-        const localEnd = Date.now();
-        const rtt = localEnd - localStart;
-        const serverTime = data?.serverTime ? new Date(data.serverTime).getTime() : Date.now();
-        const adjustedServerTime = serverTime + Math.round(rtt / 2);
-        this.serverTimeOffset = adjustedServerTime - localEnd;
-
-        return {
-          serverTime: adjustedServerTime,
-          localTime: localEnd,
-          offsetMs: this.serverTimeOffset,
-        };
-      }
-    } catch (err: any) {
-      console.warn('XM server time sync note (using local time offset):', err.message);
+      return {
+        serverTime: adjustedServerTime,
+        localTime: localEnd,
+        offsetMs: this.serverTimeOffset,
+      };
+    } catch {
+      // Local bridge offline or standby
     }
 
     return {
@@ -136,50 +60,21 @@ class XM360Client {
     return this.serverTimeOffset;
   }
 
-  private getLocalBridgeBaseUrl(): string {
-    const envUrl = process.env.LOCAL_MT5_BRIDGE_URL;
-    if (envUrl) return envUrl.replace(/\/$/, '');
-    const token = this.getApiToken();
-    if (token && (token.startsWith('http://') || token.startsWith('https://'))) return token.replace(/\/$/, '');
-    return 'http://127.0.0.1:8555';
-  }
-
+  /**
+   * Connect to Local MT5 Native Terminal Bridge
+   */
   public async connectLocalBridge(): Promise<{ success: boolean; message: string; details?: any }> {
     const config = db.getConfig();
-    const token = this.getApiToken();
     const accountId = this.getAccountId();
+    const localBaseUrl = this.getLocalBridgeBaseUrl();
 
     if (!accountId) {
-      return { success: false, message: 'Missing Account ID. Please fill and save credentials first.' };
-    }
-
-    // If explicitly using MetaApi Cloud (valid cloud token provided, not a URL or LOCAL)
-    if (this.isMetaApiMode()) {
-      try {
-        const sync = await this.syncServerTime();
-        if (sync && sync.serverTime) {
-          return {
-            success: true,
-            message: `Successfully connected to MetaApi Cloud for Account ${accountId}!`,
-            details: { serverTime: sync.serverTime, offsetMs: sync.offsetMs },
-          };
-        }
-      } catch (err: any) {
-        return {
-          success: false,
-          message: `MetaApi Cloud Connection Failed: ${err.message || 'Invalid Token or Account ID'}`,
-        };
-      }
-    }
-
-    const localBaseUrl = this.getLocalBridgeBaseUrl();
-    if (!config.accountId || !config.password) {
-      return { success: false, message: 'Missing XM Account ID or Password. Please fill and save credentials first.' };
+      return { success: false, message: 'Missing XM Account ID. Please enter and save your credentials.' };
     }
 
     try {
       const res = await axios.post(`${localBaseUrl}/connect`, {
-        account: config.accountId,
+        account: accountId,
         password: config.password,
         server: config.serverName || 'XMGlobal-Real 30',
       }, { timeout: 6000 });
@@ -187,13 +82,13 @@ class XM360Client {
       if (res.data && res.data.success) {
         return {
           success: true,
-          message: res.data.message || `Successfully connected to MT5 Account ${res.data.account_id || config.accountId}!`,
+          message: res.data.message || `Successfully connected to native MT5 Account ${res.data.account_id || accountId}!`,
           details: res.data,
         };
       } else {
         return {
           success: false,
-          message: res.data?.error || 'MT5 Bridge authentication failed.',
+          message: res.data?.error || 'MT5 Local Bridge authentication failed.',
           details: res.data,
         };
       }
@@ -201,23 +96,20 @@ class XM360Client {
       const bridgeErr = err.response?.data?.error || err.response?.data?.message || err.message;
       return {
         success: false,
-        message: `MT5 Bridge Error (${localBaseUrl}): ${bridgeErr}`,
+        message: `MT5 Local Bridge Error (${localBaseUrl}): ${bridgeErr}. Ensure MT5 app is open on VM and Python bridge is running on port 8555.`,
         details: err.response?.data,
       };
     }
   }
 
-
   /**
-   * Get XM Account Balance, Equity, & Free Margin
+   * Get XM Account Balance, Equity, & Free Margin from Local MT5 Bridge
    */
   public async getAccountBalance(): Promise<XM360AccountBalance> {
-    const apiToken = this.getApiToken();
     const accountId = this.getAccountId();
     const config = db.getConfig();
     const localBaseUrl = this.getLocalBridgeBaseUrl();
 
-    // 1. Try Local MT5 Bridge first if running
     try {
       const localRes = await axios.get(`${localBaseUrl}/account`, {
         params: {
@@ -225,8 +117,9 @@ class XM360Client {
           password: config.password,
           server: config.serverName,
         },
-        timeout: 5000
+        timeout: 5000,
       });
+
       if (localRes.data && (localRes.data.balance !== undefined || localRes.data.equity !== undefined)) {
         const b = parseFloat(localRes.data.balance || '0');
         const e = parseFloat(localRes.data.equity || localRes.data.balance || '0');
@@ -243,70 +136,7 @@ class XM360Client {
         };
       }
     } catch (err: any) {
-      console.warn(`Local MT5 bridge /account fetch notice (${localBaseUrl}):`, err.message);
-    }
-
-    if (!apiToken && !accountId) {
-      throw new Error('No XM MetaTrader account configured. Please click API Settings to connect your account.');
-    }
-
-    try {
-      const data = await this.callMetaApi(apiToken, accountId, '/account-information', 'GET');
-      if (data && (data.balance !== undefined || data.equity !== undefined)) {
-        const balance = parseFloat(data.balance || '0');
-        const equity = parseFloat(data.equity || data.balance || '0');
-        const freeMargin = parseFloat(data.freeMargin || data.marginFree || '0');
-        const usedMargin = parseFloat(data.margin || '0');
-
-        return {
-          asset: data.currency || 'USD',
-          balance,
-          equity,
-          availableMargin: freeMargin,
-          usedMargin,
-          currency: data.currency || 'USD',
-          marginLevel: usedMargin > 0 ? (equity / usedMargin) * 100 : 0,
-        };
-      }
-    } catch (err: any) {
-      console.warn('MetaApi client /account-information notice:', err.message);
-    }
-
-    // 3. Try MetaApi Provisioning API cached accountInformation
-    try {
-      const provRes = await axios.get('https://mt-provisioning-api-v1.agium.metaapi.cloud/users/current/accounts', {
-        headers: { 'auth-token': apiToken },
-        httpsAgent: this.httpsAgent,
-        timeout: 5000,
-      });
-
-      if (Array.isArray(provRes.data)) {
-        const found = provRes.data.find((acc: any) =>
-          acc.id === accountId ||
-          String(acc.login) === String(accountId) ||
-          String(acc.accountInformation?.login) === String(accountId)
-        );
-
-        const info = found?.accountInformation || found;
-        if (info && (info.balance !== undefined || info.equity !== undefined)) {
-          const balance = parseFloat(info.balance || '0');
-          const equity = parseFloat(info.equity || info.balance || '0');
-          const freeMargin = parseFloat(info.freeMargin || info.marginFree || '0');
-          const usedMargin = parseFloat(info.margin || '0');
-
-          return {
-            asset: info.currency || 'USD',
-            balance,
-            equity,
-            availableMargin: freeMargin,
-            usedMargin,
-            currency: info.currency || 'USD',
-            marginLevel: usedMargin > 0 ? (equity / usedMargin) * 100 : 0,
-          };
-        }
-      }
-    } catch (err: any) {
-      console.warn('MetaApi provisioning accountInformation notice:', err.message);
+      console.warn(`Local MT5 bridge /account fetch note (${localBaseUrl}):`, err.message);
     }
 
     return {
@@ -321,46 +151,21 @@ class XM360Client {
   }
 
   /**
-   * Fetch Live XM FX & Commodity Tickers (Gold XAUUSD, Forex, Indices)
+   * Fetch Live XM FX & Commodity Tickers from Local MT5 Bridge
    */
   public async getTickers(): Promise<XM360Ticker[]> {
-    const apiToken = this.getApiToken();
-    const accountId = this.getAccountId();
     const localBaseUrl = this.getLocalBridgeBaseUrl();
 
-    // 1. Try Local MT5 Bridge tickers
     try {
       const localRes = await axios.get(`${localBaseUrl}/tickers`, { timeout: 5000 });
       if (localRes.data && Array.isArray(localRes.data.data) && localRes.data.data.length > 0) {
         return localRes.data.data;
       }
     } catch (err: any) {
-      console.warn(`Local MT5 bridge /tickers fetch notice (${localBaseUrl}):`, err.message);
+      console.warn(`Local MT5 bridge /tickers fetch note (${localBaseUrl}):`, err.message);
     }
 
-
-    if (apiToken && accountId) {
-      try {
-        const resData = await this.callMetaApi(apiToken, accountId, '/symbols', 'GET');
-        if (Array.isArray(resData) && resData.length > 0) {
-          return resData.slice(0, 10).map((s: any) => ({
-            symbol: s.symbol || s.name,
-            lastPrice: parseFloat(s.ask || s.bid || '0'),
-            bidPrice: parseFloat(s.bid || '0'),
-            askPrice: parseFloat(s.ask || '0'),
-            priceChangePercent: parseFloat(s.priceChangePercent || '0'),
-            high24h: parseFloat(s.high || '0'),
-            low24h: parseFloat(s.low || '0'),
-            volume24h: parseFloat(s.volume || '0'),
-            spread: parseFloat(s.spread || '0'),
-          }));
-        }
-      } catch (err: any) {
-        console.warn('XM Ticker fetch notice:', err.message);
-      }
-    }
-
-    // Standard XM Supported Instruments
+    // Standard XM Supported Instruments fallback
     return [
       { symbol: 'XAUUSD', lastPrice: 0, bidPrice: 0, askPrice: 0, priceChangePercent: 0, high24h: 0, low24h: 0, volume24h: 0, spread: 0 },
       { symbol: 'EURUSD', lastPrice: 0, bidPrice: 0, askPrice: 0, priceChangePercent: 0, high24h: 0, low24h: 0, volume24h: 0, spread: 0 },
@@ -373,7 +178,7 @@ class XM360Client {
   }
 
   /**
-   * Execute Scheduled Order on XM / MetaTrader Platform
+   * Execute Scheduled Order on Local MT5 Native Terminal
    */
   public async placeOrder(orderParams: {
     symbol: string;
@@ -386,13 +191,11 @@ class XM360Client {
     stopLoss?: number;
     takeProfit?: number;
   }): Promise<{ success: boolean; orderId?: string; rawResponse?: any; error?: string }> {
-    const apiToken = this.getApiToken();
     const accountId = this.getAccountId();
     const localBaseUrl = this.getLocalBridgeBaseUrl();
     const tradeUrl = `${localBaseUrl}/trade`;
-
     const config = db.getConfig();
-    // 1. Try Local MT5 Execution Bridge
+
     try {
       const res = await axios.post(tradeUrl, {
         symbol: orderParams.symbol,
@@ -413,41 +216,21 @@ class XM360Client {
           orderId: res.data?.ticket || res.data?.orderId || `LOCAL-${Date.now()}`,
           rawResponse: res.data,
         };
-      }
-    } catch (err: any) {
-      console.warn('Local MT5 bridge execution attempt notice:', err.message);
-    }
-
-    // 2. MetaApi Cloud REST API Fallback
-    if (apiToken && !apiToken.startsWith('http') && apiToken !== 'LOCAL') {
-      try {
-        const resData = await this.callMetaApi(apiToken, accountId, '/trade', 'POST', {
-          symbol: orderParams.symbol,
-          actionType: orderParams.side === 'BUY' ? 'ORDER_TYPE_BUY' : 'ORDER_TYPE_SELL',
-          volume: orderParams.quantity,
-          openPrice: orderParams.price,
-          stopLoss: orderParams.stopLoss,
-          takeProfit: orderParams.takeProfit,
-        });
-
-        return {
-          success: true,
-          orderId: resData?.numericCode || resData?.stringCode || `METAAPI-${Date.now()}`,
-          rawResponse: resData,
-        };
-      } catch (err: any) {
+      } else {
         return {
           success: false,
-          error: `MetaApi Cloud Execution Error: ${err.response?.data?.message || err.message}`,
-          rawResponse: err.response?.data,
+          error: res.data?.error || 'Local MT5 order execution failed.',
+          rawResponse: res.data,
         };
       }
+    } catch (err: any) {
+      const bridgeErr = err.response?.data?.error || err.message;
+      return {
+        success: false,
+        error: `MT5 Local Bridge Execution Error (${tradeUrl}): ${bridgeErr}. Ensure Python bridge is running on port 8555.`,
+        rawResponse: err.response?.data,
+      };
     }
-
-    return {
-      success: false,
-      error: `MT5 Bridge Connection Refused at ${tradeUrl}. Ensure MetaApi Access Token & Account ID are configured in API Settings.`,
-    };
   }
 }
 

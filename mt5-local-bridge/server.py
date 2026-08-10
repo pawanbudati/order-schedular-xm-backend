@@ -9,6 +9,40 @@ except ImportError:
 
 app = Flask(__name__)
 
+def resolve_mt5_symbol(requested_symbol: str):
+    if not mt5 or not requested_symbol:
+        return requested_symbol, None
+        
+    raw = requested_symbol.strip()
+    
+    # 1. Try exact requested symbol name first
+    mt5.symbol_select(raw, True)
+    info = mt5.symbol_info(raw)
+    if info:
+        return raw, info
+
+    # 2. Try exact case variations (upper / lower)
+    for name in [raw.upper(), raw.lower()]:
+        mt5.symbol_select(name, True)
+        info = mt5.symbol_info(name)
+        if info:
+            return name, info
+
+    # 3. Fuzzy search across all MT5 broker symbols (matching suffixes like .i#, .m, etc.)
+    all_symbols = mt5.symbols_get()
+    if all_symbols:
+        req_clean = raw.upper().replace('.', '').replace('#', '').replace('_', '')
+        for s in all_symbols:
+            s_name = s.name
+            s_clean = s_name.upper().replace('.', '').replace('#', '').replace('_', '')
+            if s_name.upper() == raw.upper() or s_clean == req_clean or s_clean.startswith(req_clean) or req_clean.startswith(s_clean):
+                mt5.symbol_select(s_name, True)
+                info = mt5.symbol_info(s_name)
+                if info:
+                    return s_name, info
+
+    return raw, None
+
 @app.route('/health', methods=['GET'])
 def health():
     if not mt5:
@@ -91,29 +125,26 @@ def tickers():
     if not mt5.terminal_info():
         mt5.initialize()
     
-    # Target trading instrument bases
     target_bases = ["XAUUSD", "GOLD", "EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "US30", "US500", "USTECH", "BTCUSD", "ETHUSD"]
     
-    # 1. Discover all available symbols on the logged-in XM account
     all_symbols = mt5.symbols_get()
     selected_symbol_names = []
     
     if all_symbols:
         for s in all_symbols:
-            s_name = s.name.upper()
+            s_name = s.name
+            s_upper = s_name.upper()
             for base in target_bases:
-                if s_name == base or s_name.startswith(base) or (base == "GOLD" and "GOLD" in s_name):
-                    if s.name not in selected_symbol_names:
-                        selected_symbol_names.append(s.name)
+                if s_upper == base or s_upper.startswith(base) or (base == "GOLD" and "GOLD" in s_upper):
+                    if s_name not in selected_symbol_names:
+                        selected_symbol_names.append(s_name)
                     break
 
-    # Fallback to standard names if symbols_get returned empty
     if not selected_symbol_names:
         selected_symbol_names = ["XAUUSD", "EURUSD", "GBPUSD", "USDJPY", "US30", "US500", "BTCUSD"]
 
     data = []
     for sym_name in selected_symbol_names[:25]:
-        # Enable symbol in Market Watch to start receiving live tick data
         mt5.symbol_select(sym_name, True)
         info = mt5.symbol_info(sym_name)
         tick = mt5.symbol_info_tick(sym_name)
@@ -145,47 +176,56 @@ def trade():
         mt5.initialize()
         
     data = request.json or {}
-    symbol = data.get('symbol', 'XAUUSD').upper()
-    action = data.get('action', 'BUY').upper()
+    raw_symbol = str(data.get('symbol', 'XAUUSD')).strip()
+    action = str(data.get('action', 'BUY')).upper()
     volume = float(data.get('volume', 0.01))
     price = data.get('price')
     stop_loss = data.get('stopLoss')
     take_profit = data.get('takeProfit')
-    
-    symbol_info = mt5.symbol_info(symbol)
+
+    # Smart MT5 Symbol Resolver (handles GOLD.i#, GOLD.I#, GOLD, XAUUSD.m, etc.)
+    real_symbol, symbol_info = resolve_mt5_symbol(raw_symbol)
     if not symbol_info:
-        return jsonify({"success": False, "error": f"Symbol {symbol} not found in MT5"}), 400
-        
-    if not symbol_info.visible:
-        mt5.symbol_select(symbol, True)
-        
-    tick = mt5.symbol_info_tick(symbol)
+        return jsonify({"success": False, "error": f"Symbol '{raw_symbol}' not found in MT5 Market Watch."}), 400
+
+    mt5.symbol_select(real_symbol, True)
+    tick = mt5.symbol_info_tick(real_symbol)
     if not tick:
-        return jsonify({"success": False, "error": f"Failed to get live tick price for {symbol}"}), 400
+        return jsonify({"success": False, "error": f"Failed to get live tick price for symbol '{real_symbol}'"}), 400
 
     order_type = mt5.ORDER_TYPE_BUY if action == 'BUY' else mt5.ORDER_TYPE_SELL
     fill_price = tick.ask if action == 'BUY' else tick.bid
     if price:
         fill_price = float(price)
 
+    # Detect execution filling mode supported by the symbol (FOK, IOC, RETURN)
+    filling_mode = mt5.ORDER_FILLING_IOC
+    if hasattr(symbol_info, 'filling_mode'):
+        if symbol_info.filling_mode & mt5.ORDER_FILLING_FOK:
+            filling_mode = mt5.ORDER_FILLING_FOK
+        elif symbol_info.filling_mode & mt5.ORDER_FILLING_IOC:
+            filling_mode = mt5.ORDER_FILLING_IOC
+        elif symbol_info.filling_mode & mt5.ORDER_FILLING_RETURN:
+            filling_mode = mt5.ORDER_FILLING_RETURN
+
     req = {
         "action": mt5.TRADE_ACTION_DEAL,
-        "symbol": symbol,
+        "symbol": real_symbol,
         "volume": volume,
         "type": order_type,
         "price": fill_price,
         "deviation": 20,
         "magic": 234000,
-        "comment": "XM360 Order Scheduler Execution",
+        "comment": "XM360 Order Scheduler",
         "type_time": mt5.ORDER_TIME_GTC,
-        "type_filling": mt5.ORDER_FILLING_IOC,
+        "type_filling": filling_mode,
     }
-    
+
     if stop_loss:
         req["sl"] = float(stop_loss)
     if take_profit:
         req["tp"] = float(take_profit)
-        
+
     result = mt5.order_send(req)
     if result and result.retcode == mt5.TRADE_RETCODE_DONE:
         return jsonify({
@@ -197,7 +237,7 @@ def trade():
         })
     else:
         err_msg = result.comment if result else f"Error code: {mt5.last_error()}"
-        return jsonify({"success": False, "error": f"MT5 order_send failed: {err_msg}"}), 400
+        return jsonify({"success": False, "error": f"MT5 order_send failed for {real_symbol}: {err_msg}"}), 400
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8555))

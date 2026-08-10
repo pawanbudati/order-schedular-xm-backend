@@ -87,7 +87,11 @@ New-ItemProperty -Path 'HKLM:\SOFTWARE\OpenSSH' -Name DefaultShell -Value 'C:\Wi
 
 # Create application directory
 New-Item -ItemType Directory -Force -Path 'C:\apps'
+
+# Restart SSH service to load updated PATH environment variables
+Restart-Service sshd
 ```
+
 
 
 ---

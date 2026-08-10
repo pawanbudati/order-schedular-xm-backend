@@ -224,13 +224,23 @@ class XM360Client {
         };
       }
     } catch (err: any) {
-      const bridgeErr = err.response?.data?.error || err.message;
+      // If Python bridge server responded with HTTP status code (e.g. 400 Bad Request with "No money" or "Market closed")
+      if (err.response && err.response.data && err.response.data.error) {
+        return {
+          success: false,
+          error: err.response.data.error,
+          rawResponse: err.response.data,
+        };
+      }
+
+      // Only if HTTP connection itself failed (e.g. ECONNREFUSED)
       return {
         success: false,
-        error: `MT5 Local Bridge Execution Error (${tradeUrl}): ${bridgeErr}. Ensure Python bridge is running on port 8555.`,
+        error: `MT5 Local Bridge Connection Error (${tradeUrl}): ${err.message}. Ensure Python bridge is running on port 8555.`,
         rawResponse: err.response?.data,
       };
     }
+
   }
 }
 

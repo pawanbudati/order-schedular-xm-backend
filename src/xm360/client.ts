@@ -225,7 +225,7 @@ class XM360Client {
           password: config.password,
           server: config.serverName,
         },
-        timeout: 2500
+        timeout: 5000
       });
       if (localRes.data && (localRes.data.balance !== undefined || localRes.data.equity !== undefined)) {
         const b = parseFloat(localRes.data.balance || '0');
@@ -242,8 +242,8 @@ class XM360Client {
           marginLevel: um > 0 ? (e / um) * 100 : 0,
         };
       }
-    } catch {
-      // Local bridge not active or /account not implemented yet, fallback to MetaApi cloud
+    } catch (err: any) {
+      console.warn(`Local MT5 bridge /account fetch notice (${localBaseUrl}):`, err.message);
     }
 
     if (!apiToken && !accountId) {
@@ -330,13 +330,14 @@ class XM360Client {
 
     // 1. Try Local MT5 Bridge tickers
     try {
-      const localRes = await axios.get(`${localBaseUrl}/tickers`, { timeout: 2500 });
+      const localRes = await axios.get(`${localBaseUrl}/tickers`, { timeout: 5000 });
       if (localRes.data && Array.isArray(localRes.data.data) && localRes.data.data.length > 0) {
         return localRes.data.data;
       }
-    } catch {
-      // Local bridge not active, fallback to MetaApi cloud
+    } catch (err: any) {
+      console.warn(`Local MT5 bridge /tickers fetch notice (${localBaseUrl}):`, err.message);
     }
+
 
     if (apiToken && accountId) {
       try {

@@ -198,46 +198,60 @@ def trade():
     if price:
         fill_price = float(price)
 
-    # Detect execution filling mode supported by the symbol (FOK, IOC, RETURN)
-    filling_mode = mt5.ORDER_FILLING_IOC
-    if hasattr(symbol_info, 'filling_mode'):
-        if symbol_info.filling_mode & mt5.ORDER_FILLING_FOK:
-            filling_mode = mt5.ORDER_FILLING_FOK
-        elif symbol_info.filling_mode & mt5.ORDER_FILLING_IOC:
-            filling_mode = mt5.ORDER_FILLING_IOC
-        elif symbol_info.filling_mode & mt5.ORDER_FILLING_RETURN:
-            filling_mode = mt5.ORDER_FILLING_RETURN
+    # Detect execution filling mode supported by the symbol with automatic fallback
+    filling_modes = []
+    if hasattr(symbol_info, 'filling_mode') and symbol_info.filling_mode:
+        fm = symbol_info.filling_mode
+        if fm & mt5.ORDER_FILLING_FOK:
+            filling_modes.append(mt5.ORDER_FILLING_FOK)
+        if fm & mt5.ORDER_FILLING_IOC:
+            filling_modes.append(mt5.ORDER_FILLING_IOC)
+        if fm & mt5.ORDER_FILLING_RETURN:
+            filling_modes.append(mt5.ORDER_FILLING_RETURN)
 
-    req = {
-        "action": mt5.TRADE_ACTION_DEAL,
-        "symbol": real_symbol,
-        "volume": volume,
-        "type": order_type,
-        "price": fill_price,
-        "deviation": 20,
-        "magic": 234000,
-        "comment": "XM360 Order Scheduler",
-        "type_time": mt5.ORDER_TIME_GTC,
-        "type_filling": filling_mode,
-    }
+    # Fallback to trying all filling modes in priority order if symbol_info flags were ambiguous
+    for default_mode in [mt5.ORDER_FILLING_FOK, mt5.ORDER_FILLING_IOC, mt5.ORDER_FILLING_RETURN]:
+        if default_mode not in filling_modes:
+            filling_modes.append(default_mode)
 
-    if stop_loss:
-        req["sl"] = float(stop_loss)
-    if take_profit:
-        req["tp"] = float(take_profit)
+    last_error = ""
+    for f_mode in filling_modes:
+        req = {
+            "action": mt5.TRADE_ACTION_DEAL,
+            "symbol": real_symbol,
+            "volume": volume,
+            "type": order_type,
+            "price": fill_price,
+            "deviation": 20,
+            "magic": 234000,
+            "comment": "XM360 Order Scheduler",
+            "type_time": mt5.ORDER_TIME_GTC,
+            "type_filling": f_mode,
+        }
 
-    result = mt5.order_send(req)
-    if result and result.retcode == mt5.TRADE_RETCODE_DONE:
-        return jsonify({
-            "success": True,
-            "ticket": result.order,
-            "orderId": str(result.order),
-            "volume": result.volume,
-            "price": result.price
-        })
-    else:
-        err_msg = result.comment if result else f"Error code: {mt5.last_error()}"
-        return jsonify({"success": False, "error": f"MT5 order_send failed for {real_symbol}: {err_msg}"}), 400
+        if stop_loss:
+            req["sl"] = float(stop_loss)
+        if take_profit:
+            req["tp"] = float(take_profit)
+
+        result = mt5.order_send(req)
+        if result and result.retcode == mt5.TRADE_RETCODE_DONE:
+            return jsonify({
+                "success": True,
+                "ticket": result.order,
+                "orderId": str(result.order),
+                "volume": result.volume,
+                "price": result.price
+            })
+        elif result and ("filling" in str(result.comment).lower() or result.retcode in [10027, 10030]):
+            last_error = f"{result.comment} (retcode: {result.retcode})"
+            print(f"⚠️ Filling mode {f_mode} rejected for {real_symbol}: {last_error}. Retrying with next filling mode...")
+            continue
+        else:
+            err_msg = result.comment if result else f"Error code: {mt5.last_error()}"
+            return jsonify({"success": False, "error": f"MT5 order_send failed for {real_symbol}: {err_msg}"}), 400
+
+    return jsonify({"success": False, "error": f"MT5 order_send failed for {real_symbol}: {last_error}"}), 400
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8555))

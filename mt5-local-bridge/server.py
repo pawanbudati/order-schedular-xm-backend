@@ -143,7 +143,11 @@ def tickers():
     if not selected_symbol_names:
         selected_symbol_names = ["XAUUSD", "EURUSD", "GBPUSD", "USDJPY", "US30", "US500", "BTCUSD"]
 
+    # Ensure Gold symbols (XAUUSD / GOLD) are sorted first at top of list
+    selected_symbol_names.sort(key=lambda s: 0 if ("XAU" in s.upper() or "GOLD" in s.upper()) else 1)
+
     data = []
+
     for sym_name in selected_symbol_names[:25]:
         mt5.symbol_select(sym_name, True)
         info = mt5.symbol_info(sym_name)

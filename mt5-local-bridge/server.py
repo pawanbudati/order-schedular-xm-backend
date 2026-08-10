@@ -125,7 +125,7 @@ def tickers():
     if not mt5.terminal_info():
         mt5.initialize()
     
-    target_bases = ["XAUUSD", "EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "US30", "US500", "USTECH", "BTCUSD", "ETHUSD"]
+    target_bases = ["XAUUSD", "GOLD.i#, GOLD", "EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "US30", "US500", "USTECH", "BTCUSD", "ETHUSD"]
     
     all_symbols = mt5.symbols_get()
     selected_symbol_names = []

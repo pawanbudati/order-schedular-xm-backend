@@ -17,7 +17,8 @@ jobs:
           key: ${{ secrets.AWS_WINDOWS_VM_SSH_KEY }}
           password: ${{ secrets.AWS_WINDOWS_VM_PASSWORD }}
           script: |
-            powershell -ExecutionPolicy Bypass -Command "& { $env:Path = [System.Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [System.Environment]::GetEnvironmentVariable('Path','User'); $appDir = 'C:\apps\order-schedular-xm-backend'; Write-Host '🚀 Deploying order-schedular-xm-backend to AWS Windows VM...'; if (-not (Test-Path -Path $appDir)) { Write-Host 'Cloning repository for the first time...'; New-Item -ItemType Directory -Force -Path 'C:\apps' | Out-Null; git clone https://github.com/pawanbudati/order-schedular-xm-backend.git $appDir }; Set-Location -Path $appDir; git pull origin main; npm install; npm run build; pm2 restart pm2.config.js; if ($LASTEXITCODE -ne 0) { pm2 start pm2.config.js }; pm2 save; Write-Host '✅ Backend successfully deployed and running on PM2 on AWS Windows VM!' }"
+            powershell -ExecutionPolicy Bypass -Command "& { $env:PM2_HOME = 'C:\pm2'; $env:Path = [System.Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [System.Environment]::GetEnvironmentVariable('Path','User'); $appDir = 'C:\apps\order-schedular-xm-backend'; Write-Host '🚀 Deploying order-schedular-xm-backend to AWS Windows VM...'; if (-not (Test-Path -Path $appDir)) { Write-Host 'Cloning repository for the first time...'; New-Item -ItemType Directory -Force -Path 'C:\apps' | Out-Null; git clone https://github.com/pawanbudati/order-schedular-xm-backend.git $appDir }; Set-Location -Path $appDir; git pull origin main; npm install; npm run build; pm2 delete order-schedular-xm-backend 2>$null; pm2 start pm2.config.js; pm2 save; Write-Host '✅ Backend successfully deployed and running on PM2 on AWS Windows VM!' }"
+
 
 
 

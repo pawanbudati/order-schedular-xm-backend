@@ -1,4 +1,4 @@
-name: Deploy Backend to GCP VM
+name: Deploy Backend to AWS Windows VM
 
 on:
   push:
@@ -9,25 +9,27 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Deploy Backend via SSH
+      - name: Deploy Backend via SSH to AWS Windows VM
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.GCP_VM_HOST }}
-          username: ${{ secrets.GCP_VM_USERNAME }}
-          key: ${{ secrets.GCP_VM_SSH_KEY }}
+          host: ${{ secrets.AWS_WINDOWS_VM_HOST }}
+          username: ${{ secrets.AWS_WINDOWS_VM_USERNAME }}
+          key: ${{ secrets.AWS_WINDOWS_VM_SSH_KEY }}
+          password: ${{ secrets.AWS_WINDOWS_VM_PASSWORD }}
           script: |
-            echo "🚀 Deploying order-schedular-xm-backend to GCP VM..."
-            if [ ! -d "$HOME/order-schedular-xm-backend" ]; then
-              echo "Cloning repository for the first time..."
-              git clone https://github.com/pawanbudati/order-schedular-xm-backend.git $HOME/order-schedular-xm-backend
-            fi
-            
-            cd $HOME/order-schedular-xm-backend
-            git pull origin main
-            npm install
-            npm run build
-            
-            # Restart Node.js backend engine on PM2 (Port 8444)
-            # The Node.js application automatically manages and restarts the Headless MT5 Docker container on boot!
-            pm2 restart pm2.config.js || pm2 start pm2.config.js
-            echo "✅ Backend successfully deployed and running on PM2!"
+            powershell.exe -Command "
+              $appDir = 'C:\apps\order-schedular-xm-backend'
+              Write-Host '🚀 Deploying order-schedular-xm-backend to AWS Windows VM...'
+              if (-not (Test-Path -Path $appDir)) {
+                Write-Host 'Cloning repository for the first time...'
+                New-Item -ItemType Directory -Force -Path 'C:\apps' | Out-Null
+                git clone https://github.com/pawanbudati/order-schedular-xm-backend.git $appDir
+              }
+              Set-Location -Path $appDir
+              git pull origin main
+              npm install
+              npm run build
+              npx pm2 restart pm2.config.js 2>$null; if (-not $?) { npx pm2 start pm2.config.js }
+              Write-Host '✅ Backend successfully deployed and running on PM2 on AWS Windows VM!'
+            "
+

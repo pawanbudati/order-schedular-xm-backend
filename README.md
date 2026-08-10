@@ -59,9 +59,12 @@ Start-Process "$env:TEMP\git.exe" -ArgumentList "/VERYSILENT /NORESTART" -Wait
 # 3. Refresh PATH environment variable in current PowerShell window
 $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
 
-# 4. Install PM2 process manager globally
+# 4. Install PM2 process manager globally & set system PM2_HOME location
 npm install -g pm2
+[Environment]::SetEnvironmentVariable("PM2_HOME", "C:\pm2", "Machine")
+$env:PM2_HOME = "C:\pm2"
 ```
+
 
 > *(Note: If using `winget` on Windows Server, pass `--source winget` to bypass `msstore` certificate policies: `winget install OpenJS.NodeJS.LTS --source winget`)*
 

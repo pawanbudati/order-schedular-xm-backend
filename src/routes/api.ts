@@ -31,6 +31,7 @@ const formatIST = (timestamp: number): string => {
 router.get('/status', async (req, res) => {
   const sync = await xm360Client.syncServerTime();
   const config = db.getConfig();
+  const isConnected = Boolean(sync.mt5Connected);
 
   res.json({
     status: 'online',
@@ -39,11 +40,40 @@ router.get('/status', async (req, res) => {
     localTime: sync.localTime,
     localTimeIST: formatIST(sync.localTime),
     offsetMs: sync.offsetMs,
-    hasApiKeys: Boolean((config.apiToken || config.password) && config.accountId),
+    mt5Connected: isConnected,
+    hasApiKeys: isConnected || Boolean((config.apiToken || config.password) && config.accountId),
     accountId: config.accountId,
     serverName: config.serverName,
     platform: config.platform,
   });
+});
+
+// Admin Passcode / Password Verification
+router.post('/verify-passcode', (req, res) => {
+  const { passcode, password, pin } = req.body || {};
+  const entered = String(passcode || password || pin || '').trim();
+
+  const config = db.getConfig();
+  const expectedPassword = String(
+    process.env.ADMIN_PASSWORD ||
+    process.env.ADMIN_PASSCODE ||
+    process.env.ADMIN_PIN ||
+    config.passcode ||
+    '1234'
+  ).trim();
+
+  if (entered && entered === expectedPassword) {
+    return res.json({
+      success: true,
+      message: 'Admin authentication successful',
+      role: 'ADMIN',
+    });
+  } else {
+    return res.status(401).json({
+      success: false,
+      message: 'Incorrect Admin PIN or Password.',
+    });
+  }
 });
 
 // Update XM360 API Configuration

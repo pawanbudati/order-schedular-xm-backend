@@ -2,6 +2,7 @@ export interface XM360Config {
   apiToken: string;
   accountId: string;
   password?: string;
+  passcode?: string;
   serverName: string; // e.g. "XMGlobal-Real 30" or "XMGlobal-Demo"
   platform: 'MT4' | 'MT5';
   recvWindow: number;
@@ -11,6 +12,7 @@ export interface XM360ServerTime {
   serverTime: number;
   localTime: number;
   offsetMs: number; // serverTime - localTime
+  mt5Connected?: boolean;
 }
 
 export interface XM360AccountBalance {

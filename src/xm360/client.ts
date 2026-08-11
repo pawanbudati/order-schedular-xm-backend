@@ -40,10 +40,12 @@ class XM360Client {
       const adjustedServerTime = serverTime + Math.round(rtt / 2);
       this.serverTimeOffset = adjustedServerTime - localEnd;
 
+      const isConnected = res.data?.status === 'ok' || res.data?.mt5_connected === true;
       return {
         serverTime: adjustedServerTime,
         localTime: localEnd,
         offsetMs: this.serverTimeOffset,
+        mt5Connected: isConnected,
       };
     } catch {
       // Local bridge offline or standby
@@ -53,6 +55,7 @@ class XM360Client {
       serverTime: Date.now(),
       localTime: Date.now(),
       offsetMs: 0,
+      mt5Connected: false,
     };
   }
 

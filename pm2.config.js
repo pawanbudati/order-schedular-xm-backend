@@ -24,9 +24,9 @@ module.exports = {
       },
     },
     {
-      name: 'cloudflare-tunnel',
-      script: 'cloudflared',
-      args: 'tunnel --url http://127.0.0.1:8444',
+      name: 'caddy-ssl',
+      script: 'caddy',
+      args: 'run --config C:\\apps\\Caddyfile',
       instances: 1,
       autorestart: true,
       watch: false,

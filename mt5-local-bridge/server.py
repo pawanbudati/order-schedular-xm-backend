@@ -271,6 +271,8 @@ if __name__ == '__main__':
     try:
         from waitress import serve
         serve(app, host='0.0.0.0', port=port)
+        if not mt5.terminal_info():
+            mt5.initialize()
     except ImportError:
         app.run(host='0.0.0.0', port=port)
 

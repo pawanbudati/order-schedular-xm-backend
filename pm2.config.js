@@ -21,7 +21,9 @@ module.exports = {
       watch: false,
       env: {
         PORT: 8555,
+        PYTHONIOENCODING: 'utf-8',
       },
+
     },
     {
       name: 'caddy-ssl',

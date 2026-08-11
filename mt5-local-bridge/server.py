@@ -268,7 +268,7 @@ def trade():
             })
         elif result and ("filling" in str(result.comment).lower() or result.retcode in [10027, 10030]):
             last_error = f"{result.comment} (retcode: {result.retcode})"
-            print(f"⚠️ Filling mode {f_mode} rejected for {real_symbol}: {last_error}. Retrying with next filling mode...")
+            print(f"[WARNING] Filling mode {f_mode} rejected for {real_symbol}: {last_error}. Retrying with next filling mode...")
             continue
         else:
             err_msg = result.comment if result else f"Error code: {mt5.last_error()}"
@@ -277,10 +277,17 @@ def trade():
     return jsonify({"success": False, "error": f"MT5 order_send failed for {real_symbol}: {last_error}"}), 400
 
 if __name__ == '__main__':
+    if hasattr(sys.stdout, 'reconfigure'):
+        try:
+            sys.stdout.reconfigure(encoding='utf-8')
+        except Exception:
+            pass
+
     port = int(os.environ.get('PORT', 8555))
-    print(f"🚀 MT5 Local Bridge HTTP Server running on http://127.0.0.1:{port}")
+    print(f"[MT5 Bridge] HTTP Server running on http://127.0.0.1:{port}")
     try:
         from waitress import serve
         serve(app, host='0.0.0.0', port=port)
     except ImportError:
         app.run(host='0.0.0.0', port=port)
+

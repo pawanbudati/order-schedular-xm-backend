@@ -2,6 +2,20 @@
 
 Standalone Node.js + TypeScript High-Precision Backend Engine for XM / MetaTrader Order Scheduling running on AWS Windows Server VM.
 
+## ⚡ 1-Click Automated Setup (Local Machine or VM)
+
+You can automatically set up Node.js dependencies, Python MT5 bridge dependencies, environment variables, TypeScript build, Windows Firewall rules, and PM2 background processes by running the setup script:
+
+### Quick Double-Click (Windows Explorer)
+Double-click **`setup.bat`** (or right-click and select **Run as Administrator** to auto-configure Firewall rules).
+
+### PowerShell Command
+```powershell
+powershell -ExecutionPolicy Bypass -File .\setup.ps1
+```
+
+---
+
 ## 🚀 How to Start the Backend Server Locally
 
 ### Development Mode (Auto-Reloading)

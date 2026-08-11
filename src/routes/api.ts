@@ -41,7 +41,7 @@ router.get('/status', async (req, res) => {
     localTimeIST: formatIST(sync.localTime),
     offsetMs: sync.offsetMs,
     mt5Connected: isConnected,
-    hasApiKeys: isConnected || Boolean((config.apiToken || config.password) && config.accountId),
+    hasApiKeys: isConnected,
     accountId: config.accountId,
     serverName: config.serverName,
     platform: config.platform,
@@ -78,11 +78,10 @@ router.post('/verify-passcode', (req, res) => {
 
 // Update XM360 API Configuration
 router.post('/config', (req, res) => {
-  const { apiToken, accountId, password, serverName, platform, recvWindow } = req.body;
+  const { apiToken, accountId, serverName, platform, recvWindow } = req.body;
   const updated = db.updateConfig({
     ...(apiToken !== undefined && { apiToken }),
     ...(accountId !== undefined && { accountId }),
-    ...(password !== undefined && { password }),
     ...(serverName !== undefined && { serverName }),
     ...(platform !== undefined && { platform }),
     ...(recvWindow !== undefined && { recvWindow }),

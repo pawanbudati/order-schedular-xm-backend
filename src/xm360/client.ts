@@ -67,31 +67,21 @@ class XM360Client {
    * Connect to Local MT5 Native Terminal Bridge
    */
   public async connectLocalBridge(): Promise<{ success: boolean; message: string; details?: any }> {
-    const config = db.getConfig();
-    const accountId = this.getAccountId();
     const localBaseUrl = this.getLocalBridgeBaseUrl();
 
-    if (!accountId) {
-      return { success: false, message: 'Missing XM Account ID. Please enter and save your credentials.' };
-    }
-
     try {
-      const res = await axios.post(`${localBaseUrl}/connect`, {
-        account: accountId,
-        password: config.password,
-        server: config.serverName || 'XMGlobal-Real 30',
-      }, { timeout: 6000 });
+      const res = await axios.get(`${localBaseUrl}/connect`, { timeout: 6000 });
 
       if (res.data && res.data.success) {
         return {
           success: true,
-          message: res.data.message || `Successfully connected to native MT5 Account ${res.data.account_id || accountId}!`,
+          message: res.data.message || `Successfully attached to active MT5 Account ${res.data.account_id || ''}!`,
           details: res.data,
         };
       } else {
         return {
           success: false,
-          message: res.data?.error || 'MT5 Local Bridge authentication failed.',
+          message: res.data?.error || 'MT5 Local Bridge connection failed.',
           details: res.data,
         };
       }
@@ -99,7 +89,7 @@ class XM360Client {
       const bridgeErr = err.response?.data?.error || err.response?.data?.message || err.message;
       return {
         success: false,
-        message: `MT5 Local Bridge Error (${localBaseUrl}): ${bridgeErr}. Ensure MT5 app is open on VM and Python bridge is running on port 8555.`,
+        message: `MT5 Local Bridge Error (${localBaseUrl}): ${bridgeErr}. Ensure MT5 app is open on the machine and Python bridge is running on port 8555.`,
         details: err.response?.data,
       };
     }
@@ -109,19 +99,10 @@ class XM360Client {
    * Get XM Account Balance, Equity, & Free Margin from Local MT5 Bridge
    */
   public async getAccountBalance(): Promise<XM360AccountBalance> {
-    const accountId = this.getAccountId();
-    const config = db.getConfig();
     const localBaseUrl = this.getLocalBridgeBaseUrl();
 
     try {
-      const localRes = await axios.get(`${localBaseUrl}/account`, {
-        params: {
-          account: accountId,
-          password: config.password,
-          server: config.serverName,
-        },
-        timeout: 5000,
-      });
+      const localRes = await axios.get(`${localBaseUrl}/account`, { timeout: 5000 });
 
       if (localRes.data && (localRes.data.balance !== undefined || localRes.data.equity !== undefined)) {
         const b = parseFloat(localRes.data.balance || '0');
@@ -194,10 +175,8 @@ class XM360Client {
     stopLoss?: number;
     takeProfit?: number;
   }): Promise<{ success: boolean; orderId?: string; rawResponse?: any; error?: string }> {
-    const accountId = this.getAccountId();
     const localBaseUrl = this.getLocalBridgeBaseUrl();
     const tradeUrl = `${localBaseUrl}/trade`;
-    const config = db.getConfig();
 
     try {
       const res = await axios.post(tradeUrl, {
@@ -208,9 +187,6 @@ class XM360Client {
         price: orderParams.price,
         stopLoss: orderParams.stopLoss,
         takeProfit: orderParams.takeProfit,
-        account: accountId,
-        password: config.password,
-        server: config.serverName,
       }, { timeout: 5000 });
 
       if (res.data && (res.data.success || res.data.ticket || res.data.orderId)) {

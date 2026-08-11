@@ -66,43 +66,31 @@ def health():
     init_ok = mt5.terminal_info() is not None
     return jsonify({"status": "ok", "mt5_connected": init_ok})
 
-@app.route('/connect', methods=['POST'])
+@app.route('/connect', methods=['POST', 'GET'])
 def connect():
     if not mt5:
         return jsonify({"success": False, "error": "MetaTrader5 module is not installed on this machine."}), 500
-        
-    data = request.json or {}
-    account = data.get('account')
-    password = data.get('password')
-    server = data.get('server', 'XMGlobal-Real 30')
-    
-    if not account or not password:
-        return jsonify({"success": False, "error": "Missing account or password credentials."}), 400
-        
-    try:
-        acc_id = int(account)
-    except ValueError:
-        return jsonify({"success": False, "error": "Account ID must be numeric MT5 account login number."}), 400
 
-    if not mt5.initialize():
-        return jsonify({"success": False, "error": f"MT5 terminal initialization failed: {mt5.last_error()}"}), 500
+    if not mt5.terminal_info():
+        if not mt5.initialize():
+            return jsonify({"success": False, "error": f"MT5 terminal initialization failed: {mt5.last_error()}. Ensure MT5 app is open on the machine."}), 500
         
-    authorized = mt5.login(acc_id, password=password, server=server)
-    if authorized:
-        acc_info = mt5.account_info()
+    acc_info = mt5.account_info()
+    if acc_info:
         return jsonify({
             "success": True,
-            "message": f"Successfully connected to native MT5 Account {account} on {server}!",
-            "account_id": account,
-            "balance": acc_info.balance if acc_info else 0,
-            "equity": acc_info.equity if acc_info else 0,
-            "currency": acc_info.currency if acc_info else "USD"
+            "message": f"Successfully attached to active MT5 Account {acc_info.login} on {acc_info.server}!",
+            "account_id": str(acc_info.login),
+            "server": acc_info.server,
+            "balance": acc_info.balance,
+            "equity": acc_info.equity,
+            "currency": acc_info.currency
         })
     else:
         return jsonify({
             "success": False,
-            "error": f"MT5 Login failed for account {account} on server '{server}'. Error: {mt5.last_error()}"
-        }), 401
+            "error": "Failed to fetch account info. Ensure MetaTrader 5 terminal is open and logged in."
+        }), 400
 
 @app.route('/account', methods=['GET'])
 def account():
@@ -110,19 +98,12 @@ def account():
         return jsonify({"error": "MetaTrader5 module not installed"}), 500
     if not mt5.terminal_info():
         mt5.initialize()
-        
-    acc = request.args.get('account')
-    pwd = request.args.get('password')
-    srv = request.args.get('server', 'XMGlobal-Real 30')
-    if acc and pwd:
-        try:
-            mt5.login(int(acc), password=pwd, server=srv)
-        except Exception:
-            pass
 
     acc_info = mt5.account_info()
     if acc_info:
         return jsonify({
+            "account_id": str(acc_info.login),
+            "server": acc_info.server,
             "balance": acc_info.balance,
             "equity": acc_info.equity,
             "margin": acc_info.margin,
@@ -132,7 +113,7 @@ def account():
             "currency": acc_info.currency,
             "leverage": acc_info.leverage
         })
-    return jsonify({"error": "Failed to fetch account info from MT5"}), 500
+    return jsonify({"error": "Failed to fetch account info from MT5 terminal"}), 500
 
 @app.route('/tickers', methods=['GET'])
 def tickers():

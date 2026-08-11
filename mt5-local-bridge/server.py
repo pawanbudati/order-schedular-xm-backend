@@ -9,39 +9,55 @@ except ImportError:
 
 app = Flask(__name__)
 
+def is_tradable(info):
+    if not info:
+        return False
+    # Check if symbol trade mode is not disabled (SYMBOL_TRADE_MODE_DISABLED == 0)
+    if hasattr(info, 'trade_mode') and info.trade_mode == mt5.SYMBOL_TRADE_MODE_DISABLED:
+        return False
+    return True
+
 def resolve_mt5_symbol(requested_symbol: str):
     if not mt5 or not requested_symbol:
         return requested_symbol, None
         
     raw = requested_symbol.strip()
     
-    # 1. Try exact requested symbol name first
+    # 1. Try exact requested symbol name first if tradable
     mt5.symbol_select(raw, True)
     info = mt5.symbol_info(raw)
-    if info:
+    if info and is_tradable(info):
         return raw, info
 
-    # 2. Try exact case variations (upper / lower)
+    # 2. Try exact case variations (upper / lower) if tradable
     for name in [raw.upper(), raw.lower()]:
         mt5.symbol_select(name, True)
         info = mt5.symbol_info(name)
-        if info:
+        if info and is_tradable(info):
             return name, info
 
-    # 3. Fuzzy search across all MT5 broker symbols (matching suffixes like .i#, .m, etc.)
+    # 3. Search across all MT5 broker symbols for active tradable variation (e.g. AUDUSD.i#, AUDUSD.m, XAUUSD.m)
     all_symbols = mt5.symbols_get()
+    fallback_info = None
+    fallback_name = raw
+    
     if all_symbols:
         req_clean = raw.upper().replace('.', '').replace('#', '').replace('_', '')
         for s in all_symbols:
             s_name = s.name
             s_clean = s_name.upper().replace('.', '').replace('#', '').replace('_', '')
             if s_name.upper() == raw.upper() or s_clean == req_clean or s_clean.startswith(req_clean) or req_clean.startswith(s_clean):
-                mt5.symbol_select(s_name, True)
-                info = mt5.symbol_info(s_name)
-                if info:
-                    return s_name, info
+                if is_tradable(s):
+                    mt5.symbol_select(s_name, True)
+                    info = mt5.symbol_info(s_name)
+                    if info and is_tradable(info):
+                        return s_name, info
+                elif not fallback_info:
+                    mt5.symbol_select(s_name, True)
+                    fallback_info = mt5.symbol_info(s_name)
+                    fallback_name = s_name
 
-    return raw, None
+    return fallback_name, fallback_info
 
 @app.route('/health', methods=['GET'])
 def health():
@@ -125,13 +141,15 @@ def tickers():
     if not mt5.terminal_info():
         mt5.initialize()
     
-    target_bases = ["XAUUSD", "GOLD.i#, GOLD", "EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "US30", "US500", "USTECH", "BTCUSD", "ETHUSD"]
+    target_bases = ["XAUUSD", "GOLD", "EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "US30", "US500", "USTECH", "BTCUSD", "ETHUSD"]
     
     all_symbols = mt5.symbols_get()
     selected_symbol_names = []
     
     if all_symbols:
         for s in all_symbols:
+            if not is_tradable(s):
+                continue
             s_name = s.name
             s_upper = s_name.upper()
             for base in target_bases:
@@ -187,7 +205,7 @@ def trade():
     stop_loss = data.get('stopLoss')
     take_profit = data.get('takeProfit')
 
-    # Smart MT5 Symbol Resolver (handles GOLD.i#, GOLD.I#, GOLD, XAUUSD.m, etc.)
+    # Smart MT5 Symbol Resolver (handles GOLD.i#, AUDUSD.i#, XAUUSD.m, etc. checking active trade_mode)
     real_symbol, symbol_info = resolve_mt5_symbol(raw_symbol)
     if not symbol_info:
         return jsonify({"success": False, "error": f"Symbol '{raw_symbol}' not found in MT5 Market Watch."}), 400

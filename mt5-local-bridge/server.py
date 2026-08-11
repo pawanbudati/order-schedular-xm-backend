@@ -63,6 +63,8 @@ def resolve_mt5_symbol(requested_symbol: str):
 def health():
     if not mt5:
         return jsonify({"status": "error", "message": "MetaTrader5 Python module not installed."}), 500
+    if not mt5.terminal_info():
+        mt5.initialize()
     init_ok = mt5.terminal_info() is not None
     return jsonify({"status": "ok", "mt5_connected": init_ok})
 

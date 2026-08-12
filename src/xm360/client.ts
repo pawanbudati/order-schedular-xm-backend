@@ -66,11 +66,25 @@ class XM360Client {
   /**
    * Connect to Local MT5 Native Terminal Bridge
    */
-  public async connectLocalBridge(): Promise<{ success: boolean; message: string; details?: any }> {
+  public async connectLocalBridge(accParams?: {
+    accountId?: string;
+    serverName?: string;
+    terminalPath?: string;
+    password?: string;
+  }): Promise<{ success: boolean; message: string; details?: any }> {
     const localBaseUrl = this.getLocalBridgeBaseUrl();
+    const activeAcc = db.getActiveAccount();
+    const accountId = accParams?.accountId || activeAcc?.accountId || this.getAccountId();
+    const server = accParams?.serverName || activeAcc?.serverName || this.getServerName();
+    const path = accParams?.terminalPath || activeAcc?.terminalPath;
+    const password = accParams?.password || activeAcc?.password;
 
     try {
-      const res = await axios.get(`${localBaseUrl}/connect`, { timeout: 6000 });
+      const res = await axios.post(
+        `${localBaseUrl}/connect`,
+        { accountId, server, path, password },
+        { timeout: 6000 }
+      );
 
       if (res.data && res.data.success) {
         return {
@@ -96,13 +110,37 @@ class XM360Client {
   }
 
   /**
-   * Get XM Account Balance, Equity, & Free Margin from Local MT5 Bridge
+   * Fetch list of running / configured MT5 terminal instances from local bridge
    */
-  public async getAccountBalance(): Promise<XM360AccountBalance> {
+  public async getDetectedInstances(): Promise<{ success: boolean; instances: any[]; configured_paths?: string[] }> {
     const localBaseUrl = this.getLocalBridgeBaseUrl();
+    try {
+      const res = await axios.get(`${localBaseUrl}/instances`, { timeout: 6000 });
+      return {
+        success: true,
+        instances: res.data?.instances || [],
+        configured_paths: res.data?.configured_paths || [],
+      };
+    } catch {
+      return { success: false, instances: [] };
+    }
+  }
+
+  /**
+   * Get XM Account Balance, Equity, & Free Margin from Local MT5 Bridge for target account
+   */
+  public async getAccountBalance(accId?: string): Promise<XM360AccountBalance> {
+    const localBaseUrl = this.getLocalBridgeBaseUrl();
+    const activeAcc = db.getAccounts().find((a) => a.id === accId || a.accountId === accId) || db.getActiveAccount();
+    const targetAccountId = accId || activeAcc?.accountId || this.getAccountId();
+    const path = activeAcc?.terminalPath;
+    const server = activeAcc?.serverName;
 
     try {
-      const localRes = await axios.get(`${localBaseUrl}/account`, { timeout: 5000 });
+      const localRes = await axios.get(`${localBaseUrl}/account`, {
+        params: { accountId: targetAccountId, path, server },
+        timeout: 5000,
+      });
 
       if (localRes.data && (localRes.data.balance !== undefined || localRes.data.equity !== undefined)) {
         const b = parseFloat(localRes.data.balance || '0');
@@ -117,6 +155,7 @@ class XM360Client {
           usedMargin: um,
           currency: localRes.data.currency || 'USD',
           marginLevel: um > 0 ? (e / um) * 100 : 0,
+          accountId: localRes.data.account_id || targetAccountId,
         };
       }
     } catch (err: any) {
@@ -131,17 +170,25 @@ class XM360Client {
       usedMargin: 0,
       currency: 'USD',
       marginLevel: 0,
+      accountId: targetAccountId,
     };
   }
 
   /**
    * Fetch Live XM FX & Commodity Tickers from Local MT5 Bridge
    */
-  public async getTickers(): Promise<XM360Ticker[]> {
+  public async getTickers(accId?: string): Promise<XM360Ticker[]> {
     const localBaseUrl = this.getLocalBridgeBaseUrl();
+    const activeAcc = db.getAccounts().find((a) => a.id === accId || a.accountId === accId) || db.getActiveAccount();
+    const targetAccountId = accId || activeAcc?.accountId;
+    const path = activeAcc?.terminalPath;
+    const server = activeAcc?.serverName;
 
     try {
-      const localRes = await axios.get(`${localBaseUrl}/tickers`, { timeout: 5000 });
+      const localRes = await axios.get(`${localBaseUrl}/tickers`, {
+        params: { accountId: targetAccountId, path, server },
+        timeout: 5000,
+      });
       if (localRes.data && Array.isArray(localRes.data.data) && localRes.data.data.length > 0) {
         return localRes.data.data;
       }
@@ -174,20 +221,37 @@ class XM360Client {
     leverage?: number;
     stopLoss?: number;
     takeProfit?: number;
+    accountId?: string;
+    serverName?: string;
+    terminalPath?: string;
   }): Promise<{ success: boolean; orderId?: string; rawResponse?: any; error?: string }> {
     const localBaseUrl = this.getLocalBridgeBaseUrl();
     const tradeUrl = `${localBaseUrl}/trade`;
 
+    const activeAcc = db.getAccounts().find((a) => a.accountId === orderParams.accountId || a.id === orderParams.accountId) || db.getActiveAccount();
+    const targetAccountId = orderParams.accountId || activeAcc?.accountId;
+    const targetServer = orderParams.serverName || activeAcc?.serverName;
+    const targetPath = orderParams.terminalPath || activeAcc?.terminalPath;
+    const password = activeAcc?.password;
+
     try {
-      const res = await axios.post(tradeUrl, {
-        symbol: orderParams.symbol,
-        action: orderParams.side,
-        type: orderParams.type,
-        volume: orderParams.quantity,
-        price: orderParams.price,
-        stopLoss: orderParams.stopLoss,
-        takeProfit: orderParams.takeProfit,
-      }, { timeout: 5000 });
+      const res = await axios.post(
+        tradeUrl,
+        {
+          symbol: orderParams.symbol,
+          action: orderParams.side,
+          type: orderParams.type,
+          volume: orderParams.quantity,
+          price: orderParams.price,
+          stopLoss: orderParams.stopLoss,
+          takeProfit: orderParams.takeProfit,
+          accountId: targetAccountId,
+          server: targetServer,
+          path: targetPath,
+          password,
+        },
+        { timeout: 5000 }
+      );
 
       if (res.data && (res.data.success || res.data.ticket || res.data.orderId)) {
         return {
@@ -203,7 +267,6 @@ class XM360Client {
         };
       }
     } catch (err: any) {
-      // If Python bridge server responded with HTTP status code (e.g. 400 Bad Request with "No money" or "Market closed")
       if (err.response && err.response.data && err.response.data.error) {
         return {
           success: false,
@@ -212,15 +275,14 @@ class XM360Client {
         };
       }
 
-      // Only if HTTP connection itself failed (e.g. ECONNREFUSED)
       return {
         success: false,
         error: `MT5 Local Bridge Connection Error (${tradeUrl}): ${err.message}. Ensure Python bridge is running on port 8555.`,
         rawResponse: err.response?.data,
       };
     }
-
   }
 }
 
 export const xm360Client = new XM360Client();
+

@@ -1,3 +1,14 @@
+export interface AccountConfig {
+  id: string; // Internal account identifier key
+  accountId: string; // MT5 Login ID (e.g., "50123456")
+  accountName?: string; // Human label (e.g. "XM Real Account 1")
+  serverName: string; // e.g. "XMGlobal-Real 30"
+  platform: 'MT4' | 'MT5';
+  password?: string;
+  terminalPath?: string; // Path to terminal64.exe (e.g. C:\Program Files\XM MT5 1\terminal64.exe)
+  isDefault?: boolean;
+}
+
 export interface XM360Config {
   apiToken: string;
   accountId: string;
@@ -6,6 +17,7 @@ export interface XM360Config {
   serverName: string; // e.g. "XMGlobal-Real 30" or "XMGlobal-Demo"
   platform: 'MT4' | 'MT5';
   recvWindow: number;
+  terminalPath?: string;
 }
 
 export interface XM360ServerTime {
@@ -23,6 +35,7 @@ export interface XM360AccountBalance {
   usedMargin: number;
   currency?: string;
   marginLevel?: number;
+  accountId?: string;
 }
 
 export interface XM360Ticker {
@@ -48,6 +61,10 @@ export interface ScheduledOrderRequest {
   targetTime: number; // UTC timestamp in milliseconds
   stopLoss?: number;
   takeProfit?: number;
+  accountId?: string;
+  accountName?: string;
+  serverName?: string;
+  terminalPath?: string;
 }
 
 export interface ScheduledOrder extends ScheduledOrderRequest {
@@ -70,3 +87,4 @@ export interface ExecutionLog {
   message: string;
   details?: any;
 }
+

@@ -136,6 +136,9 @@ class HighPrecisionSchedulerEngine {
         leverage: order.leverage,
         stopLoss: order.stopLoss,
         takeProfit: order.takeProfit,
+        accountId: order.accountId,
+        serverName: order.serverName,
+        terminalPath: order.terminalPath,
       });
 
       const completionTime = Date.now();

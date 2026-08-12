@@ -31,6 +31,7 @@ const formatIST = (timestamp: number): string => {
 router.get('/status', async (req, res) => {
   const sync = await xm360Client.syncServerTime();
   const config = db.getConfig();
+  const activeAcc = db.getActiveAccount();
   const isConnected = Boolean(sync.mt5Connected);
 
   res.json({
@@ -42,10 +43,105 @@ router.get('/status', async (req, res) => {
     offsetMs: sync.offsetMs,
     mt5Connected: isConnected,
     hasApiKeys: isConnected,
-    accountId: config.accountId,
-    serverName: config.serverName,
-    platform: config.platform,
+    accountId: activeAcc?.accountId || config.accountId,
+    accountName: activeAcc?.accountName || `MT5 Account ${config.accountId}`,
+    serverName: activeAcc?.serverName || config.serverName,
+    platform: activeAcc?.platform || config.platform,
+    activeAccountId: db.getActiveAccountId(),
+    accountsCount: db.getAccounts().length,
   });
+});
+
+// Accounts Management Endpoints
+router.get('/accounts', async (req, res) => {
+  const accounts = db.getAccounts();
+  const activeAccountId = db.getActiveAccountId();
+  const activeAccount = db.getActiveAccount();
+
+  // Try fetching detected running MT5 instances from local bridge
+  const detected = await xm360Client.getDetectedInstances();
+
+  res.json({
+    success: true,
+    data: {
+      accounts,
+      activeAccountId,
+      activeAccount,
+      detectedInstances: detected.instances || [],
+      configuredPaths: detected.configured_paths || [],
+    },
+  });
+});
+
+router.post('/accounts', (req, res) => {
+  try {
+    const { accountId, accountName, serverName, platform, password, terminalPath } = req.body;
+    if (!accountId) {
+      return res.status(400).json({ success: false, error: 'Account ID (MT5 Login) is required' });
+    }
+
+    const newAcc = db.addAccount({
+      accountId: String(accountId).trim(),
+      accountName: accountName ? String(accountName).trim() : `MT5 Account ${accountId}`,
+      serverName: serverName ? String(serverName).trim() : 'XMGlobal-Real 30',
+      platform: platform === 'MT4' ? 'MT4' : 'MT5',
+      password: password ? String(password).trim() : undefined,
+      terminalPath: terminalPath ? String(terminalPath).trim() : undefined,
+    });
+
+    res.json({ success: true, data: newAcc, accounts: db.getAccounts(), activeAccountId: db.getActiveAccountId() });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.put('/accounts/:id', (req, res) => {
+  const { id } = req.params;
+  const updated = db.updateAccount(id, req.body);
+  if (updated) {
+    res.json({ success: true, data: updated, accounts: db.getAccounts(), activeAccountId: db.getActiveAccountId() });
+  } else {
+    res.status(404).json({ success: false, error: `Account ${id} not found` });
+  }
+});
+
+router.delete('/accounts/:id', (req, res) => {
+  const { id } = req.params;
+  const deleted = db.deleteAccount(id);
+  if (deleted) {
+    res.json({ success: true, message: 'Account deleted', accounts: db.getAccounts(), activeAccountId: db.getActiveAccountId() });
+  } else {
+    res.status(404).json({ success: false, error: `Account ${id} not found` });
+  }
+});
+
+router.post('/accounts/switch', async (req, res) => {
+  const { accountId, id } = req.body;
+  const targetId = id || accountId;
+
+  if (!targetId) {
+    return res.status(400).json({ success: false, error: 'Target Account ID is required' });
+  }
+
+  const switched = db.setActiveAccountId(targetId);
+  if (switched) {
+    // Attempt context switch in local MT5 bridge
+    await xm360Client.connectLocalBridge({
+      accountId: switched.accountId,
+      serverName: switched.serverName,
+      terminalPath: switched.terminalPath,
+      password: switched.password,
+    });
+
+    res.json({
+      success: true,
+      message: `Switched active account to ${switched.accountName || switched.accountId}`,
+      activeAccount: switched,
+      activeAccountId: db.getActiveAccountId(),
+    });
+  } else {
+    res.status(404).json({ success: false, error: `Account ${targetId} not found` });
+  }
 });
 
 // Admin Passcode / Password Verification
@@ -78,14 +174,24 @@ router.post('/verify-passcode', (req, res) => {
 
 // Update XM360 API Configuration
 router.post('/config', (req, res) => {
-  const { apiToken, accountId, serverName, platform, recvWindow } = req.body;
+  const { apiToken, accountId, serverName, platform, recvWindow, terminalPath } = req.body;
   const updated = db.updateConfig({
     ...(apiToken !== undefined && { apiToken }),
     ...(accountId !== undefined && { accountId }),
     ...(serverName !== undefined && { serverName }),
     ...(platform !== undefined && { platform }),
     ...(recvWindow !== undefined && { recvWindow }),
+    ...(terminalPath !== undefined && { terminalPath }),
   });
+
+  if (accountId) {
+    db.addAccount({
+      accountId: String(accountId),
+      serverName: serverName || 'XMGlobal-Real 30',
+      platform: platform || 'MT5',
+      terminalPath,
+    });
+  }
 
   // Re-sync time with XM Broker Server
   xm360Client.syncServerTime();
@@ -105,7 +211,8 @@ router.post('/config', (req, res) => {
 // Explicit Manual Connection Trigger for MT5 Local Bridge
 router.post('/config/connect-mt5', async (req, res) => {
   try {
-    const result = await xm360Client.connectLocalBridge();
+    const { accountId } = req.body || {};
+    const result = await xm360Client.connectLocalBridge(accountId ? { accountId: String(accountId) } : undefined);
     if (result.success) {
       res.json(result);
     } else {
@@ -119,7 +226,8 @@ router.post('/config/connect-mt5', async (req, res) => {
 // Get Account Balance & Purchasing Power
 router.get('/balance', async (req, res) => {
   try {
-    const balance = await xm360Client.getAccountBalance();
+    const accId = req.query.accountId as string | undefined;
+    const balance = await xm360Client.getAccountBalance(accId);
     res.json({ success: true, data: balance });
   } catch (err: any) {
     res.json({
@@ -140,7 +248,8 @@ router.get('/balance', async (req, res) => {
 // Get Trading Pairs & Tickers
 router.get('/pairs', async (req, res) => {
   try {
-    const tickers = await xm360Client.getTickers();
+    const accId = req.query.accountId as string | undefined;
+    const tickers = await xm360Client.getTickers(accId);
     res.json({ success: true, data: tickers });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
@@ -150,11 +259,32 @@ router.get('/pairs', async (req, res) => {
 // Schedule a New Order
 router.post('/schedule', (req, res) => {
   try {
-    const { symbol, side, positionSide, type, price, quantity, leverage, targetTime, stopLoss, takeProfit } = req.body;
+    const {
+      symbol,
+      side,
+      positionSide,
+      type,
+      price,
+      quantity,
+      leverage,
+      targetTime,
+      stopLoss,
+      takeProfit,
+      accountId,
+      accountName,
+      serverName,
+      terminalPath,
+    } = req.body;
 
     if (!symbol || !side || !quantity || !targetTime) {
       return res.status(400).json({ success: false, error: 'Missing required parameters (symbol, side, quantity, targetTime)' });
     }
+
+    const activeAcc = db.getAccounts().find((a) => a.id === accountId || a.accountId === accountId) || db.getActiveAccount();
+    const targetAccountId = accountId || activeAcc?.accountId || db.getConfig().accountId;
+    const targetAccountName = accountName || activeAcc?.accountName || `MT5 Account ${targetAccountId}`;
+    const targetServerName = serverName || activeAcc?.serverName || db.getConfig().serverName;
+    const targetTerminalPath = terminalPath || activeAcc?.terminalPath;
 
     const id = `ORD-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
     const targetTimeFormatted = formatIST(Number(targetTime));
@@ -174,6 +304,10 @@ router.post('/schedule', (req, res) => {
       stopLoss: stopLoss ? parseFloat(stopLoss) : undefined,
       takeProfit: takeProfit ? parseFloat(takeProfit) : undefined,
       createdAt: Date.now(),
+      accountId: targetAccountId,
+      accountName: targetAccountName,
+      serverName: targetServerName,
+      terminalPath: targetTerminalPath,
     };
 
     db.addOrder(newOrder);
@@ -210,3 +344,4 @@ router.get('/logs', (req, res) => {
 });
 
 export default router;
+

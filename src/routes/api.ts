@@ -54,12 +54,40 @@ router.get('/status', async (req, res) => {
 
 // Accounts Management Endpoints
 router.get('/accounts', async (req, res) => {
+  // Try fetching detected running MT5 instances from local bridge
+  const detected = await xm360Client.getDetectedInstances();
+  const instances = detected.instances || [];
+
+  // Auto-sync custom names from detected env instances into registered db accounts
+  if (Array.isArray(instances)) {
+    instances.forEach((inst: any) => {
+      const accIdStr = String(inst.account_id || inst.accountId || '').trim();
+      const customName = inst.account_name || inst.name;
+
+      if (accIdStr && customName) {
+        const currentAccounts = db.getAccounts();
+        const existing = currentAccounts.find((a) => a.accountId === accIdStr);
+        if (existing) {
+          if (!existing.accountName || existing.accountName.startsWith('MT5 Account') || existing.accountName.startsWith('XM Account') || existing.accountName === 'Default MT5 Account') {
+            db.updateAccount(existing.id, { accountName: customName });
+          }
+        } else {
+          // Auto-register newly detected MT5 instance with its custom name
+          db.addAccount({
+            accountId: accIdStr,
+            accountName: customName,
+            serverName: inst.server || 'XMGlobal-Real 30',
+            platform: 'MT5',
+            terminalPath: inst.path || undefined,
+          });
+        }
+      }
+    });
+  }
+
   const accounts = db.getAccounts();
   const activeAccountId = db.getActiveAccountId();
   const activeAccount = db.getActiveAccount();
-
-  // Try fetching detected running MT5 instances from local bridge
-  const detected = await xm360Client.getDetectedInstances();
 
   res.json({
     success: true,
@@ -67,7 +95,7 @@ router.get('/accounts', async (req, res) => {
       accounts,
       activeAccountId,
       activeAccount,
-      detectedInstances: detected.instances || [],
+      detectedInstances: instances,
       configuredPaths: detected.configured_paths || [],
     },
   });

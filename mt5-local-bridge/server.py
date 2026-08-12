@@ -200,16 +200,23 @@ def instances():
     found_instances = []
     
     active_acc = mt5.account_info()
+    term_info = mt5.terminal_info()
+    active_path = term_info.path if term_info else ""
+    active_custom_name = path_to_name.get(active_path.lower()) if active_path else None
+
     if active_acc:
+        acc_id = str(active_acc.login)
+        c_name = active_custom_name or f"XM Account {acc_id}"
         found_instances.append({
-            "account_id": str(active_acc.login),
-            "account_name": f"XM Account {active_acc.login}",
+            "account_id": acc_id,
+            "account_name": c_name,
+            "name": c_name,
             "server": active_acc.server,
             "balance": active_acc.balance,
             "equity": active_acc.equity,
             "currency": active_acc.currency,
             "leverage": active_acc.leverage,
-            "path": ""
+            "path": active_path
         })
 
     for p in paths:

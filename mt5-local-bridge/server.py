@@ -33,20 +33,25 @@ load_env_vars()
 
 def get_configured_terminal_paths():
     paths = []
+    # 1. Comma-separated list (unlimited)
     env_list = os.environ.get('MT5_TERMINAL_PATHS', '')
     if env_list:
         for item in env_list.split(','):
             item = item.strip().strip('"').strip("'")
             if item and item not in paths:
                 paths.append(item)
+    
+    # 2. Single MT5_PATH fallback
     if os.environ.get('MT5_PATH') and os.environ.get('MT5_PATH') not in paths:
         paths.append(os.environ.get('MT5_PATH').strip())
-    for i in range(1, 15):
-        p = os.environ.get(f'MT5_PATH_{i}')
-        if p:
-            p = p.strip().strip('"').strip("'")
+        
+    # 3. Dynamic MT5_PATH_1..MT5_PATH_100 and any MT5_PATH_* variables
+    for key, val in os.environ.items():
+        if key.startswith('MT5_PATH_') and val:
+            p = val.strip().strip('"').strip("'")
             if p and p not in paths:
                 paths.append(p)
+                
     return paths
 
 def resolve_account_context(account_id=None, path=None, server=None, password=None):

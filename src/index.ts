@@ -1,6 +1,8 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import path from 'path';
+import fs from 'fs';
 import apiRouter from './routes/api.js';
 import { schedulerEngine } from './scheduler/engine.js';
 
@@ -16,16 +18,36 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// API routes (support /api, /xm-api, and root routes)
+// API routes (support /api and /xm-api prefixes)
 app.use('/api', apiRouter);
 app.use('/xm-api', apiRouter);
-app.use('/', apiRouter);
 
 // Health check
 app.get('/health', (req, res) => {
   const istTime = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) + ' IST';
   res.json({ status: 'ok', timeIST: istTime, timestamp: Date.now() });
 });
+
+// Serve frontend dist statically if available
+const frontendDist = path.resolve(process.cwd(), '../order-schedular-xm/dist');
+const frontendDistLocal = path.resolve(process.cwd(), './dist_frontend');
+
+const staticDir = fs.existsSync(frontendDist) ? frontendDist : (fs.existsSync(frontendDistLocal) ? frontendDistLocal : null);
+
+if (staticDir) {
+  app.use(express.static(staticDir, {
+    setHeaders: (res, filepath) => {
+      if (filepath.endsWith('.html')) {
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+      } else {
+        res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
+      }
+    }
+  }));
+}
+
+// Fallback API routes on root
+app.use('/', apiRouter);
 
 // Start engine & server
 async function startServer() {
@@ -40,3 +62,4 @@ async function startServer() {
 startServer().catch((err) => {
   console.error('Fatal error starting server:', err);
 });
+

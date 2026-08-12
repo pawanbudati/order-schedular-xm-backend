@@ -31,28 +31,50 @@ def load_env_vars():
 
 load_env_vars()
 
-def get_configured_terminal_paths():
-    paths = []
-    # 1. Comma-separated list (unlimited)
-    env_list = os.environ.get('MT5_TERMINAL_PATHS', '')
-    if env_list:
-        for item in env_list.split(','):
-            item = item.strip().strip('"').strip("'")
-            if item and item not in paths:
-                paths.append(item)
-    
-    # 2. Single MT5_PATH fallback
-    if os.environ.get('MT5_PATH') and os.environ.get('MT5_PATH') not in paths:
-        paths.append(os.environ.get('MT5_PATH').strip())
-        
-    # 3. Dynamic MT5_PATH_1..MT5_PATH_100 and any MT5_PATH_* variables
+def get_configured_terminals():
+    terminals = []
+    seen_paths = set()
+
+    # 1. Dynamic MT5_PATH_1..MT5_PATH_100 and associated MT5_NAME_1..MT5_NAME_100
     for key, val in os.environ.items():
         if key.startswith('MT5_PATH_') and val:
-            p = val.strip().strip('"').strip("'")
-            if p and p not in paths:
-                paths.append(p)
-                
-    return paths
+            suffix = key[len('MT5_PATH_'):]
+            path_val = val.strip().strip('"').strip("'")
+            if path_val and path_val not in seen_paths:
+                name_key = f'MT5_NAME_{suffix}'
+                name_val = os.environ.get(name_key, '').strip().strip('"').strip("'")
+                terminals.append({
+                    "path": path_val,
+                    "name": name_val if name_val else f"MT5 Instance {suffix}"
+                })
+                seen_paths.add(path_val)
+
+    # 2. Comma-separated list MT5_TERMINAL_PATHS and MT5_TERMINAL_NAMES
+    env_paths = os.environ.get('MT5_TERMINAL_PATHS', '')
+    env_names = os.environ.get('MT5_TERMINAL_NAMES', '')
+    if env_paths:
+        p_list = [p.strip().strip('"').strip("'") for p in env_paths.split(',') if p.strip()]
+        n_list = [n.strip().strip('"').strip("'") for n in env_names.split(',') if n.strip()] if env_names else []
+        for idx, p in enumerate(p_list):
+            if p and p not in seen_paths:
+                n = n_list[idx] if idx < len(n_list) else f"MT5 Instance {idx+1}"
+                terminals.append({"path": p, "name": n})
+                seen_paths.add(p)
+
+    # 3. Single MT5_PATH and MT5_NAME fallback
+    single_path = os.environ.get('MT5_PATH', '').strip().strip('"').strip("'")
+    if single_path and single_path not in seen_paths:
+        single_name = os.environ.get('MT5_NAME', '').strip().strip('"').strip("'")
+        terminals.append({
+            "path": single_path,
+            "name": single_name if single_name else "MT5 Default"
+        })
+        seen_paths.add(single_path)
+
+    return terminals
+
+def get_configured_terminal_paths():
+    return [t["path"] for t in get_configured_terminals()]
 
 def resolve_account_context(account_id=None, path=None, server=None, password=None):
     if not mt5:
@@ -171,13 +193,17 @@ def instances():
     if not mt5:
         return jsonify({"success": False, "instances": [], "error": "MT5 module not installed"}), 500
     
-    paths = get_configured_terminal_paths()
+    cfg_terminals = get_configured_terminals()
+    paths = [t["path"] for t in cfg_terminals]
+    path_to_name = {t["path"].lower(): t["name"] for t in cfg_terminals}
+
     found_instances = []
     
     active_acc = mt5.account_info()
     if active_acc:
         found_instances.append({
             "account_id": str(active_acc.login),
+            "account_name": f"XM Account {active_acc.login}",
             "server": active_acc.server,
             "balance": active_acc.balance,
             "equity": active_acc.equity,
@@ -193,9 +219,12 @@ def instances():
                 acc = mt5.account_info()
                 if acc:
                     acc_id = str(acc.login)
+                    custom_name = path_to_name.get(p.lower()) or f"XM Account {acc_id}"
                     if not any(i["account_id"] == acc_id for i in found_instances):
                         found_instances.append({
                             "account_id": acc_id,
+                            "account_name": custom_name,
+                            "name": custom_name,
                             "server": acc.server,
                             "balance": acc.balance,
                             "equity": acc.equity,
@@ -203,6 +232,13 @@ def instances():
                             "leverage": acc.leverage,
                             "path": p
                         })
+                    else:
+                        # Update name if active_acc was matched
+                        for inst in found_instances:
+                            if inst["account_id"] == acc_id:
+                                inst["account_name"] = custom_name
+                                inst["name"] = custom_name
+                                inst["path"] = p
 
     if found_instances and not mt5.terminal_info():
         first_p = found_instances[0].get("path")

@@ -192,9 +192,11 @@ if ($isAdmin) {
 # ------------------------------------------------------------------------------
 # 8.5 Auto-Launch Configured MT5 Instances from .env
 # ------------------------------------------------------------------------------
-Write-Host "[WAIT] Scanning .env file for configured MT5 terminal paths..." -ForegroundColor Yellow
+Write-Host "[WAIT] Scanning .env file for configured MT5 terminal paths and custom names..." -ForegroundColor Yellow
 
-$mt5PathsToLaunch = @()
+$mt5TerminalsToLaunch = @() # objects with Path and Name
+$envPathMap = @{}
+$envNameMap = @{}
 
 if (Test-Path -Path $envFile) {
     $envLines = Get-Content -Path $envFile
@@ -206,27 +208,66 @@ if (Test-Path -Path $envFile) {
             $val = $parts[1].Trim().Trim('"').Trim("'")
 
             if ($key -eq "MT5_PATH" -or $key -like "MT5_PATH_*") {
-                if ($val -and ($mt5PathsToLaunch -notcontains $val)) {
-                    $mt5PathsToLaunch += $val
+                if ($val) {
+                    $envPathMap[$key] = $val
+                }
+            }
+            elseif ($key -eq "MT5_NAME" -or $key -like "MT5_NAME_*") {
+                if ($val) {
+                    $envNameMap[$key] = $val
                 }
             }
             elseif ($key -eq "MT5_TERMINAL_PATHS") {
                 if ($val) {
-                    $splitPaths = $val.Split(",")
-                    foreach ($sp in $splitPaths) {
-                        $trimmedSp = $sp.Trim().Trim('"').Trim("'")
-                        if ($trimmedSp -and ($mt5PathsToLaunch -notcontains $trimmedSp)) {
-                            $mt5PathsToLaunch += $trimmedSp
-                        }
-                    }
+                    $envPathMap["MT5_TERMINAL_PATHS"] = $val
+                }
+            }
+            elseif ($key -eq "MT5_TERMINAL_NAMES") {
+                if ($val) {
+                    $envNameMap["MT5_TERMINAL_NAMES"] = $val
                 }
             }
         }
     }
+
+    # Process indexed MT5_PATH_N
+    foreach ($k in $envPathMap.Keys) {
+        if ($k -like "MT5_PATH_*") {
+            $suffix = $k.Substring("MT5_PATH_".Length)
+            $p = $envPathMap[$k]
+            $nKey = "MT5_NAME_$suffix"
+            $n = if ($envNameMap.ContainsKey($nKey)) { $envNameMap[$nKey] } else { "MT5 Instance $suffix" }
+            if ($p) {
+                $mt5TerminalsToLaunch += [PSCustomObject]@{ Path = $p; Name = $n }
+            }
+        }
+    }
+
+    # Process MT5_TERMINAL_PATHS
+    if ($envPathMap.ContainsKey("MT5_TERMINAL_PATHS")) {
+        $pList = $envPathMap["MT5_TERMINAL_PATHS"].Split(",")
+        $nList = if ($envNameMap.ContainsKey("MT5_TERMINAL_NAMES")) { $envNameMap["MT5_TERMINAL_NAMES"].Split(",") } else { @() }
+        for ($i = 0; $i -lt $pList.Count; $i++) {
+            $p = $pList[$i].Trim().Trim('"').Trim("'")
+            $n = if ($i -lt $nList.Count) { $nList[$i].Trim().Trim('"').Trim("'") } else { "MT5 Instance $($i+1)" }
+            if ($p -and -not ($mt5TerminalsToLaunch | Where-Object { $_.Path -eq $p })) {
+                $mt5TerminalsToLaunch += [PSCustomObject]@{ Path = $p; Name = $n }
+            }
+        }
+    }
+
+    # Process MT5_PATH
+    if ($envPathMap.ContainsKey("MT5_PATH")) {
+        $p = $envPathMap["MT5_PATH"]
+        $n = if ($envNameMap.ContainsKey("MT5_NAME")) { $envNameMap["MT5_NAME"] } else { "MT5 Default" }
+        if ($p -and -not ($mt5TerminalsToLaunch | Where-Object { $_.Path -eq $p })) {
+            $mt5TerminalsToLaunch += [PSCustomObject]@{ Path = $p; Name = $n }
+        }
+    }
 }
 
-if ($mt5PathsToLaunch.Count -gt 0) {
-    Write-Host "[INFO] Found $($mt5PathsToLaunch.Count) configured MT5 terminal path(s) in .env:" -ForegroundColor Cyan
+if ($mt5TerminalsToLaunch.Count -gt 0) {
+    Write-Host "[INFO] Found $($mt5TerminalsToLaunch.Count) configured MT5 terminal instance(s) in .env:" -ForegroundColor Cyan
     
     # Get currently running process executable paths
     $runningExePaths = @()
@@ -241,25 +282,28 @@ if ($mt5PathsToLaunch.Count -gt 0) {
         }
     } catch {}
 
-    foreach ($exePath in $mt5PathsToLaunch) {
+    foreach ($item in $mt5TerminalsToLaunch) {
+        $exePath = $item.Path
+        $instName = $item.Name
+
         if (Test-Path -Path $exePath) {
             $normalizedPath = (Get-Item $exePath).FullName.ToLower()
             $isAlreadyRunning = $runningExePaths -contains $normalizedPath
 
             if ($isAlreadyRunning) {
-                Write-Host "       [OK] MT5 Terminal already running: $exePath" -ForegroundColor Green
+                Write-Host "       [OK] '$instName' is already running: $exePath" -ForegroundColor Green
             } else {
-                Write-Host "       [WAIT] Launching MT5 Terminal instance: $exePath..." -ForegroundColor Yellow
+                Write-Host "       [WAIT] Launching '$instName': $exePath..." -ForegroundColor Yellow
                 try {
                     Start-Process -FilePath $exePath -WorkingDirectory (Split-Path -Path $exePath -Parent)
-                    Write-Host "       [OK] MT5 Terminal launched successfully." -ForegroundColor Green
+                    Write-Host "       [OK] '$instName' launched successfully." -ForegroundColor Green
                     Start-Sleep -Seconds 2
                 } catch {
-                    Write-Host "       [WARN] Failed to launch MT5 terminal at $exePath : $_" -ForegroundColor Yellow
+                    Write-Host "       [WARN] Failed to launch '$instName' at $exePath : $_" -ForegroundColor Yellow
                 }
             }
         } else {
-            Write-Host "       [WARN] Configured MT5 path does not exist on disk: $exePath" -ForegroundColor Yellow
+            Write-Host "       [WARN] Configured MT5 path for '$instName' does not exist on disk: $exePath" -ForegroundColor Yellow
         }
     }
 } else {

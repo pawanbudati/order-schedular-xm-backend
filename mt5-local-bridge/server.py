@@ -265,7 +265,97 @@ def switch_account():
             "equity": acc_info.equity,
             "currency": acc_info.currency
         })
-    return jsonify({"success": False, "error": msg}), 400
+def enable_algo_trading_via_win32():
+    """Toggles / Enables Algo Trading on MT5 terminal via Windows Win32 API hotkey (Ctrl+E) or WM_COMMAND."""
+    if not mt5:
+        return False, "MetaTrader5 module not installed"
+        
+    try:
+        term = mt5.terminal_info()
+        if term and getattr(term, 'trade_allowed', False):
+            return True, "Algo trading is already enabled on MT5 terminal"
+
+        import ctypes
+        from ctypes import wintypes
+
+        user32 = ctypes.windll.user32
+        hwnd_target = None
+
+        def enum_windows_callback(hwnd, extra):
+            nonlocal hwnd_target
+            length = user32.GetWindowTextLengthW(hwnd)
+            if length > 0:
+                buff = ctypes.create_unicode_buffer(length + 1)
+                user32.GetWindowTextW(hwnd, buff, length + 1)
+                title = buff.value
+                if "MetaTrader 5" in title or "XM" in title or "terminal64" in title:
+                    hwnd_target = hwnd
+                    return False
+            return True
+
+        WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
+        user32.EnumWindows(WNDENUMPROC(enum_windows_callback), 0)
+
+        if hwnd_target:
+            VK_CONTROL = 0x11
+            VK_E = 0x45
+            user32.SetForegroundWindow(hwnd_target)
+            time.sleep(0.05)
+            user32.keybd_event(VK_CONTROL, 0, 0, 0)
+            user32.keybd_event(VK_E, 0, 0, 0)
+            user32.keybd_event(VK_E, 0, 2, 0)
+            user32.keybd_event(VK_CONTROL, 0, 2, 0)
+            time.sleep(0.1)
+
+            term_new = mt5.terminal_info()
+            if term_new and getattr(term_new, 'trade_allowed', False):
+                return True, "Algo trading successfully enabled via Win32 hotkey (Ctrl+E)"
+            return True, "Triggered Ctrl+E hotkey to toggle Algo Trading"
+            
+        return False, "MT5 terminal window not found in foreground for Win32 toggle"
+    except Exception as e:
+        return False, f"Error enabling algo trading: {str(e)}"
+
+@app.route('/algo-trading', methods=['GET'])
+def get_algo_trading_status():
+    if not mt5:
+        return jsonify({"success": False, "error": "MetaTrader5 module not installed"}), 500
+
+    account_id = request.args.get('accountId') or request.args.get('account_id')
+    path = request.args.get('path')
+    resolve_account_context(account_id=account_id, path=path)
+
+    term_info = mt5.terminal_info()
+    acc_info = mt5.account_info()
+
+    terminal_algo_enabled = getattr(term_info, 'trade_allowed', False) if term_info else False
+    account_trade_allowed = getattr(acc_info, 'trade_allowed', False) if acc_info else False
+
+    return jsonify({
+        "success": True,
+        "algoTradingEnabled": terminal_algo_enabled,
+        "accountTradeAllowed": account_trade_allowed,
+        "isReadyForAlgoTrading": terminal_algo_enabled and account_trade_allowed,
+        "accountId": str(acc_info.login) if acc_info else None,
+        "connected": True if acc_info else False
+    })
+
+@app.route('/algo-trading/enable', methods=['POST'])
+def enable_algo_trading():
+    data = request.json or {}
+    account_id = data.get('accountId') or data.get('account_id')
+    path = data.get('path')
+    resolve_account_context(account_id=account_id, path=path)
+
+    ok, msg = enable_algo_trading_via_win32()
+    term_info = mt5.terminal_info()
+    enabled = getattr(term_info, 'trade_allowed', False) if term_info else False
+
+    return jsonify({
+        "success": ok,
+        "message": msg,
+        "algoTradingEnabled": enabled
+    })
 
 @app.route('/account', methods=['GET'])
 def account():

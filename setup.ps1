@@ -190,6 +190,83 @@ if ($isAdmin) {
 }
 
 # ------------------------------------------------------------------------------
+# 8.5 Auto-Launch Configured MT5 Instances from .env
+# ------------------------------------------------------------------------------
+Write-Host "[WAIT] Scanning .env file for configured MT5 terminal paths..." -ForegroundColor Yellow
+
+$mt5PathsToLaunch = @()
+
+if (Test-Path -Path $envFile) {
+    $envLines = Get-Content -Path $envFile
+    foreach ($line in $envLines) {
+        $line = $line.Trim()
+        if ($line -and -not $line.StartsWith("#") -and $line.Contains("=")) {
+            $parts = $line.Split("=", 2)
+            $key = $parts[0].Trim()
+            $val = $parts[1].Trim().Trim('"').Trim("'")
+
+            if ($key -eq "MT5_PATH" -or $key -like "MT5_PATH_*") {
+                if ($val -and ($mt5PathsToLaunch -notcontains $val)) {
+                    $mt5PathsToLaunch += $val
+                }
+            }
+            elseif ($key -eq "MT5_TERMINAL_PATHS") {
+                if ($val) {
+                    $splitPaths = $val.Split(",")
+                    foreach ($sp in $splitPaths) {
+                        $trimmedSp = $sp.Trim().Trim('"').Trim("'")
+                        if ($trimmedSp -and ($mt5PathsToLaunch -notcontains $trimmedSp)) {
+                            $mt5PathsToLaunch += $trimmedSp
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+if ($mt5PathsToLaunch.Count -gt 0) {
+    Write-Host "[INFO] Found $($mt5PathsToLaunch.Count) configured MT5 terminal path(s) in .env:" -ForegroundColor Cyan
+    
+    # Get currently running process executable paths
+    $runningExePaths = @()
+    try {
+        $runningProcesses = Get-Process -Name "terminal64", "terminal" -ErrorAction SilentlyContinue
+        foreach ($proc in $runningProcesses) {
+            try {
+                if ($proc.Path) {
+                    $runningExePaths += $proc.Path.ToLower()
+                }
+            } catch {}
+        }
+    } catch {}
+
+    foreach ($exePath in $mt5PathsToLaunch) {
+        if (Test-Path -Path $exePath) {
+            $normalizedPath = (Get-Item $exePath).FullName.ToLower()
+            $isAlreadyRunning = $runningExePaths -contains $normalizedPath
+
+            if ($isAlreadyRunning) {
+                Write-Host "       [OK] MT5 Terminal already running: $exePath" -ForegroundColor Green
+            } else {
+                Write-Host "       [WAIT] Launching MT5 Terminal instance: $exePath..." -ForegroundColor Yellow
+                try {
+                    Start-Process -FilePath $exePath -WorkingDirectory (Split-Path -Path $exePath -Parent)
+                    Write-Host "       [OK] MT5 Terminal launched successfully." -ForegroundColor Green
+                    Start-Sleep -Seconds 2
+                } catch {
+                    Write-Host "       [WARN] Failed to launch MT5 terminal at $exePath : $_" -ForegroundColor Yellow
+                }
+            }
+        } else {
+            Write-Host "       [WARN] Configured MT5 path does not exist on disk: $exePath" -ForegroundColor Yellow
+        }
+    }
+} else {
+    Write-Host "[INFO] No specific MT5 terminal paths configured in .env." -ForegroundColor Gray
+}
+
+# ------------------------------------------------------------------------------
 # 9. Launch Services with PM2
 # ------------------------------------------------------------------------------
 Write-Host "[WAIT] Starting application processes using PM2..." -ForegroundColor Yellow
